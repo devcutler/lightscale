@@ -1,0 +1,38 @@
+[Unit]
+Description=Lightscale
+Documentation=https://lightscale.dev
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+ExecStart=/usr/local/bin/lightscaled --config /etc/lightscale/lightscale.toml
+ExecReload=/bin/kill -HUP $MAINPID
+Restart=on-failure
+RestartSec=2
+
+RuntimeDirectory=lightscale
+RuntimeDirectoryMode=0750
+StateDirectory=lightscale
+StateDirectoryMode=0750
+
+; dedicated service user. the socket is group-owned by lightscale; add system users
+; to that group to use the CLI without sudo.
+User=lightscaled
+Group=lightscale
+
+AmbientCapabilities=CAP_NET_ADMIN
+CapabilityBoundingSet=CAP_NET_ADMIN
+
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/var/lib/lightscale
+ProtectKernelTunables=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
+RestrictNamespaces=true
+LockPersonality=true
+
+[Install]
+WantedBy=multi-user.target

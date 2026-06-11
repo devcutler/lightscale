@@ -1,0 +1,27 @@
+# the image creates the lightscale group (gid 1500), so the default [socket] group works as-is
+# set public_endpoint to the host's reachable address, e.g. vpn.example.com:51820
+
+services:
+  lightscale:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    image: lightscale:latest
+    cap_add:
+      - NET_ADMIN
+    ports:
+      - "51820:51820/udp"
+    volumes:
+      - ./lightscale.toml:/etc/lightscale/lightscale.toml:ro
+      - ./data:/var/lib/lightscale
+
+      # you can mount the socket so you can access it outside the container (see below for alternative)
+      # - ./run:/run/lightscale
+
+      # only mount the host docker socket if you want to use --origin <container> services:
+      # - /var/run/docker.sock:/var/run/docker.sock:ro
+    restart: unless-stopped
+
+# you can manage it with the CLI inside the container:
+# docker compose exec lightscale lightscale status
+# you could alias `lightscale` to the first part if you don't want to have the socket mounted
