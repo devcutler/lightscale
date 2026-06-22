@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"os/signal"
+	"syscall"
 
 	"github.com/spf13/cobra"
 
@@ -37,6 +38,7 @@ func New() *cobra.Command {
 	root.AddCommand(newDNSCmd(opts))
 	root.AddCommand(newPeersCmd(opts))
 	root.AddCommand(newConnectionsCmd(opts))
+	root.AddCommand(newServeCmd(opts))
 
 	return root
 }
@@ -46,7 +48,7 @@ func newClient(opts *Options) *client.Client {
 func signalCtx() (context.Context, context.CancelFunc) {
 	ctx, cancel := context.WithCancel(context.Background())
 	c := make(chan os.Signal, 1)
-	signal.Notify(c, os.Interrupt)
+	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
 	go func() {
 		<-c
 		cancel()

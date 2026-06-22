@@ -3,6 +3,7 @@ const GOARCH = "amd64";
 const env = { ...process.env, GOOS, GOARCH };
 
 usePwsh();
+$.log = (entry) => { entry.kind === 'cmd' && console.log(entry.cmd); }
 
 const targets = [
   { pkg: "./daemon", out: "lightscaled" },
@@ -10,6 +11,10 @@ const targets = [
 ];
 
 await $`mkdir -ea 0 bin`;
+
+echo("Building web UI -> web/dist");
+await $({ cwd: "web/frontend" })`pnpm install --frozen-lockfile`;
+await $({ cwd: "web/frontend" })`pnpm run build`;
 
 for (const { pkg, out } of targets) {
   echo(`Building ${pkg} -> bin/${out} (${GOOS}/${GOARCH})`);

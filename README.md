@@ -38,6 +38,7 @@ You could probably run this fairly easily with any other process-management tool
 - `user`, `user-group`, `service`, `service-group`: create / list / get / update / delete, plus `join` / `leave` on the groups.
 - `policy`: `add <subject> <object> allow|deny`, `list`, `delete <id>`.
 - `status`, `peers`, `connections`, `dns`: inspect the daemon and tunnel.
+- `serve <bind>`: serve the web UI (see [Web UI](#web-ui)).
 
 Run any command with `--help` for its flags. `--json` for machine output on most commands, `--socket <path>` to point at a non-default socket.
 
@@ -140,6 +141,19 @@ git clone https://github.com/devcutler/lightscale
 cd lightscale
 go build ./...
 ```
+
+The full build (binaries + web UI) goes through `build.zx.js`, which additionally needs Node and pnpm. It builds the frontend into `web/dist` (embedded into the `lightscale` binary) before compiling:
+```sh
+zx build.zx.js
+```
+A plain `go build ./...` works without the frontend built. The web UI just serves a "not built" placeholder until you run the above.
+
+## Web UI
+
+`lightscale serve <bind>` serves the web UI, proxying `/api/*` to the daemon socket (default port `11687`). For development, run `lightscale serve` and `pnpm dev` in `web/frontend`; Vite proxies `/api` to `http://127.0.0.1:11687` (override with the `LIGHTSCALE_WEB` env var).
+
+> [!WARNING]
+> `serve` exposes the daemon's full admin API with no authentication. Reaching it is equivalent to access to the socket. This should NEVER be exposed to the wider internet. I don't recommend leaving it running when you're not using it either.
 
 ## Tests
 
