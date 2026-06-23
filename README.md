@@ -4,12 +4,7 @@ A self-hosted wireguard VPN gateway with lightweight access control and complete
 
 ## Basic Install
 
-Prerequisites: Git, Go 1.26+, sudo
-```sh
-sudo apt install git golang-go
-```
-
-This will get the current source, compile it, and put the binaries in the correct places.
+Prerequisites: sudo, curl/wget (either). 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/devcutler/lightscale/main/deploy/install.sh | bash
 ```
@@ -25,8 +20,8 @@ curl -fsSL https://raw.githubusercontent.com/devcutler/lightscale/main/deploy/in
 # set whatever you need in your default editor
 sudo $EDITOR /etc/lightscale/lightscale.toml
 
-# run in the foreground
-sudo lightscaled
+# restart will both start and restart if upgrading
+sudo systemctl restart lightscaled
 ```
 
 I don't recommend running in Docker for various reasons, but you can for cleanliness if you absolutely want to. There's an example compose file and the Dockerfile (for building automatically) in `deploy/`. For docker the services you want clients to reach have to be on a network accessible to the container. You can just add it to a shared network with all your services (or use host networking).

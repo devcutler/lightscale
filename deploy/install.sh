@@ -1,26 +1,41 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-REPO_URL="${LIGHTSCALE_REPO:-https://github.com/devcutler/lightscale}"
-BRANCH="${LIGHTSCALE_BRANCH:-main}"
+REPO="${LIGHTSCALE_REPO:-devcutler/lightscale}"
+VERSION="${LIGHTSCALE_VERSION:-latest}"
 BIN_DIR=/usr/local/bin
 SERVICE_USER=lightscaled
 SERVICE_GROUP=lightscale
 
-for cmd in git go sudo; do
-	command -v "$cmd" >/dev/null || { echo "need $cmd, it's not installed" >&2; exit 1; }
-done
+command -v sudo >/dev/null || { echo "need sudo, it's not installed" >&2; exit 1; }
+
+if command -v curl >/dev/null; then
+	fetch() { curl -fsSL "$1" -o "$2"; }
+elif command -v wget >/dev/null; then
+	fetch() { wget -qO "$2" "$1"; }
+else
+	echo "need curl or wget, neither is installed" >&2; exit 1
+fi
+
+case "$(uname -m)" in
+	x86_64|amd64) ARCH=amd64 ;;
+	aarch64|arm64) ARCH=arm64 ;;
+	*) echo "unsupported architecture: $(uname -m)" >&2; exit 1 ;;
+esac
+
+if [[ "$VERSION" == "latest" ]]; then
+	BASE="https://github.com/$REPO/releases/latest/download"
+else
+	BASE="https://github.com/$REPO/releases/download/$VERSION"
+fi
 
 SRC_DIR="$(mktemp -d)"
 trap 'rm -rf "$SRC_DIR"' EXIT
 
-echo "cloning..."
-git clone --depth 1 --branch "$BRANCH" "$REPO_URL" "$SRC_DIR" --quiet
-cd "$SRC_DIR"
-
-echo "building..."
-go build -o "$SRC_DIR/lightscaled" ./daemon
-go build -o "$SRC_DIR/lightscale" ./cli
+echo "downloading $VERSION ($ARCH)..."
+fetch "$BASE/lightscaled-linux-$ARCH" "$SRC_DIR/lightscaled"
+fetch "$BASE/lightscale-linux-$ARCH" "$SRC_DIR/lightscale"
+fetch "$BASE/lightscaled.service" "$SRC_DIR/lightscaled.service"
 
 echo "installing..."
 sudo install -m 0755 "$SRC_DIR/lightscaled" "$BIN_DIR/lightscaled"
@@ -43,7 +58,7 @@ sudo chmod 0640 /etc/lightscale/lightscale.toml
 sudo install -d -m 0750 -o "$SERVICE_USER" -g "$SERVICE_GROUP" /var/lib/lightscale
 sudo chown -R "$SERVICE_USER:$SERVICE_GROUP" /var/lib/lightscale
 
-sudo install -m 0644 "$SRC_DIR/deploy/lightscaled.service" /etc/systemd/system/lightscaled.service
+sudo install -m 0644 "$SRC_DIR/lightscaled.service" /etc/systemd/system/lightscaled.service
 sudo systemctl daemon-reload
 sudo systemctl enable lightscaled
 sudo systemctl try-restart lightscaled
