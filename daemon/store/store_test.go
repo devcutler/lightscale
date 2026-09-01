@@ -5,6 +5,8 @@ import (
 	"errors"
 	"path/filepath"
 	"testing"
+
+	"github.com/devcutler/lightscale/shared/origin"
 )
 
 func openTest(t *testing.T) *Store {
@@ -62,7 +64,7 @@ func TestServiceCRUDAndPorts(t *testing.T) {
 
 	svc, err := s.CreateService(ctx, CreateServiceInput{
 		Name: "jellyfin", Hostname: "jellyfin.lightscale.local",
-		Origin: "host", IPAddress: "10.6.1.5",
+		Origin: origin.Spec{Kind: origin.Host}, IPAddress: "10.6.1.5",
 		Ports: []ServicePort{{Port: 8096, Protocol: "tcp"}},
 	})
 	if err != nil {
@@ -90,7 +92,7 @@ func TestPolicyAllowDeleteRoundtrip(t *testing.T) {
 		t.Fatal(err)
 	}
 	svc, err := s.CreateService(ctx, CreateServiceInput{
-		Name: "jellyfin", Hostname: "jellyfin.local", Origin: "host", IPAddress: "10.6.1.5",
+		Name: "jellyfin", Hostname: "jellyfin.local", Origin: origin.Spec{Kind: origin.Host}, IPAddress: "10.6.1.5",
 	})
 	if err != nil {
 		t.Fatal(err)

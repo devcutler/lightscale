@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/netip"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -229,13 +230,7 @@ func (h *e2eHarness) apiDoMulti(req *http.Request, expects ...int) map[string]an
 	}
 	defer resp.Body.Close()
 	body, _ := io.ReadAll(resp.Body)
-	ok := false
-	for _, e := range expects {
-		if resp.StatusCode == e {
-			ok = true
-			break
-		}
-	}
+	ok := slices.Contains(expects, resp.StatusCode)
 	if !ok {
 		h.t.Fatalf("api %s %s: expected %v, got %d: %s",
 			req.Method, req.URL.Path, expects, resp.StatusCode, string(body))

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net"
 	"os/user"
+	"slices"
 	"strconv"
 
 	"golang.org/x/sys/unix"
@@ -100,10 +101,5 @@ func (l *peerCredListener) inAllowedGroup(uid uint32) bool {
 		return false
 	}
 	want := strconv.FormatUint(uint64(l.allowedGID), 10)
-	for _, g := range gids {
-		if g == want {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(gids, want)
 }

@@ -78,7 +78,7 @@ func newUserGroupCreateCmd(opts *Options) *cobra.Command {
 		},
 	}
 	cmd.Flags().BoolVar(&lanMode, "lan-mode", false, "members can reach each other on all ports")
-	return cmd
+	return withPreview(cmd, opts, userGroups.previewCreate)
 }
 
 func newUserGroupListCmd(opts *Options) *cobra.Command {
@@ -170,11 +170,11 @@ func newUserGroupUpdateCmd(opts *Options) *cobra.Command {
 	cmd.Flags().StringVar(&newName, "name", "", "new name")
 	cmd.Flags().BoolVar(&lanMode, "lan-mode", false, "enable LAN mode")
 	cmd.Flags().BoolVar(&noLAN, "no-lan-mode", false, "disable LAN mode")
-	return cmd
+	return withPreview(cmd, opts, userGroups.previewUpdate)
 }
 
 func newUserGroupDeleteCmd(opts *Options) *cobra.Command {
-	return &cobra.Command{
+	return withPreview(&cobra.Command{
 		Use:   "delete <name>",
 		Short: "Delete a user group",
 		Args:  cobra.ExactArgs(1),
@@ -191,11 +191,11 @@ func newUserGroupDeleteCmd(opts *Options) *cobra.Command {
 			fmt.Fprintf(cmd.OutOrStdout(), "deleted user-group %s\n", g.Name)
 			return nil
 		},
-	}
+	}, opts, userGroups.previewDelete)
 }
 
 func newUserGroupJoinCmd(opts *Options) *cobra.Command {
-	return &cobra.Command{
+	return withPreview(&cobra.Command{
 		Use:   "join <group> <user>",
 		Short: "Add a user to a group",
 		Args:  cobra.ExactArgs(2),
@@ -218,11 +218,11 @@ func newUserGroupJoinCmd(opts *Options) *cobra.Command {
 			fmt.Fprintf(cmd.OutOrStdout(), "added %s to %s\n", u.Name, g.Name)
 			return nil
 		},
-	}
+	}, opts, userGroups.previewJoin)
 }
 
 func newUserGroupLeaveCmd(opts *Options) *cobra.Command {
-	return &cobra.Command{
+	return withPreview(&cobra.Command{
 		Use:   "leave <group> <user>",
 		Short: "Remove a user from a group",
 		Args:  cobra.ExactArgs(2),
@@ -244,7 +244,7 @@ func newUserGroupLeaveCmd(opts *Options) *cobra.Command {
 			fmt.Fprintf(cmd.OutOrStdout(), "removed %s from %s\n", u.Name, g.Name)
 			return nil
 		},
-	}
+	}, opts, userGroups.previewLeave)
 }
 
 func lookupUserGroupByName(ctx context.Context, opts *Options, name string) (userGroupJSON, error) {

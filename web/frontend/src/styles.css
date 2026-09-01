@@ -660,6 +660,28 @@ body {
 	background: var(--type-user-bg);
 }
 
+.action-badge {
+	display: inline-block;
+	font-size: 11px;
+	padding: 1px 8px;
+	border-radius: 4px;
+	border: 1px solid var(--border-1);
+	text-transform: uppercase;
+	letter-spacing: 0.03em;
+}
+
+.action-allow {
+	color: var(--ok);
+	border-color: var(--type-service-border);
+	background: var(--type-service-bg);
+}
+
+.action-deny {
+	color: var(--danger);
+	border-color: var(--danger-soft);
+	background: var(--danger-soft);
+}
+
 .tb-service,
 .tb-service_group {
 	color: var(--type-service);
@@ -790,6 +812,18 @@ body {
 	display: flex;
 }
 
+.popover {
+	position: fixed;
+	z-index: 200;
+	display: flex;
+	overflow: hidden;
+}
+
+.popover > * {
+	max-height: 100%;
+	overflow-y: auto;
+}
+
 .select input {
 	width: 100%;
 }
@@ -813,11 +847,6 @@ body {
 }
 
 .select-list {
-	position: absolute;
-	top: calc(100% + 4px);
-	left: 0;
-	right: 0;
-	z-index: 10;
 	margin: 0;
 	padding: 4px;
 	list-style: none;
@@ -1057,10 +1086,6 @@ body {
 }
 
 .col-toggle-list {
-	position: absolute;
-	top: calc(100% + 4px);
-	right: 0;
-	z-index: 5;
 	min-width: 160px;
 	margin: 0;
 	padding: 4px;

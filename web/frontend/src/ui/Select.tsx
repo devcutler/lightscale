@@ -1,6 +1,7 @@
 import { useRef, useState } from "react";
 import { Check, ChevronDown } from "lucide-react";
 import { useDismiss } from "./useDismiss";
+import { Popover } from "./Popover";
 
 interface Option {
 	value: string;
@@ -68,7 +69,7 @@ export function Select({ value, onChange, options, placeholder = "Select...", di
 				<span>{selected ? selected.label : placeholder}</span>
 				<ChevronDown size={15} className="dim" />
 			</button>
-			{open && (
+			<Popover anchor={root} open={open}>
 				<ul className="select-list" role="listbox">
 					{options.map((o, i) => (
 						<li
@@ -87,7 +88,7 @@ export function Select({ value, onChange, options, placeholder = "Select...", di
 						</li>
 					))}
 				</ul>
-			)}
+			</Popover>
 		</div>
 	);
 }

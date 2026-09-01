@@ -14,7 +14,7 @@ export function Peers() {
 	const cols: Column<Peer>[] = [
 		{ key: "name", header: "Name", value: (p) => p.name ?? "", sortable: true, render: (p) => p.name || "-" },
 		{ key: "ip", header: "IP", value: (p) => p.ip_address ?? "", sortable: true, compare: (a, b) => ipKey(a.ip_address) - ipKey(b.ip_address), render: (p) => p.ip_address || "-" },
-		{ key: "endpoint", header: "Endpoint", value: (p) => p.endpoint ?? "", render: (p) => p.endpoint || "-" },
+		{ key: "endpoint", header: "Connecting from", value: (p) => p.endpoint ?? "", render: (p) => p.endpoint || "-" },
 		{
 			key: "hs",
 			header: "Last handshake",

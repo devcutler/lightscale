@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -12,8 +13,10 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 
 	"github.com/devcutler/lightscale/daemon/docker"
+	"github.com/devcutler/lightscale/daemon/proxy"
 	"github.com/devcutler/lightscale/daemon/store"
 	"github.com/devcutler/lightscale/shared/config"
+	"github.com/devcutler/lightscale/shared/origin"
 	"github.com/devcutler/lightscale/shared/wire"
 )
 
@@ -67,15 +70,21 @@ type PeerStatus struct {
 	RxBytes           uint64
 	TxBytes           uint64
 }
+
+type OriginChecker interface {
+	Resolve(ctx context.Context, spec origin.Spec, port int, proto string) (proxy.Target, error)
+}
+
 type Deps struct {
-	Store    *store.Store
-	Config   *config.Config
-	Docker   *docker.Client
-	Status   StatusProvider
-	Peers    PeersProvider
-	Flows    FlowsProvider
-	Resolver Resolver
-	Now      func() time.Time
+	Store         *store.Store
+	Config        *config.Config
+	Docker        *docker.Client
+	Status        StatusProvider
+	Peers         PeersProvider
+	Flows         FlowsProvider
+	Resolver      Resolver
+	OriginChecker OriginChecker
+	Now           func() time.Time
 }
 type Server struct {
 	deps Deps
@@ -127,6 +136,7 @@ func (s *Server) routes() {
 			r.Get("/{id}", s.getService)
 			r.Patch("/{id}", s.updateService)
 			r.Delete("/{id}", s.deleteService)
+			r.Post("/{id}/check", s.checkServiceOrigin)
 		})
 
 		r.Route("/service-groups", func(r chi.Router) {

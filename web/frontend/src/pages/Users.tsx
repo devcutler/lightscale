@@ -31,7 +31,7 @@ export function Users() {
 	const peerByUser = useMemo(() => {
 		const m = new Map<number, Peer>();
 		for (const p of peers.data ?? []) {
-			if (!p.user_id) continue;
+			if (p.user_id == null) continue;
 			const existing = m.get(p.user_id);
 			const cur = p.last_handshake_ago_sec ?? Infinity;
 			const prev = existing?.last_handshake_ago_sec ?? Infinity;

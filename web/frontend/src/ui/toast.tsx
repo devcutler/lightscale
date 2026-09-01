@@ -55,6 +55,7 @@ export function useAction() {
 				await fn();
 			} catch (e) {
 				toast.err(errMsg(e));
+				throw e;
 			}
 		},
 		[toast],

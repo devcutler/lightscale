@@ -2,9 +2,17 @@ package store
 
 import (
 	"context"
+	"database/sql"
 	"errors"
+	"fmt"
+	"io/fs"
 	"path/filepath"
+	"reflect"
+	"sort"
 	"testing"
+
+	"github.com/devcutler/lightscale/daemon/store/migrations"
+	"github.com/devcutler/lightscale/shared/origin"
 )
 
 func TestOpenIdempotentMigrations(t *testing.T) {
@@ -37,20 +45,34 @@ func TestOpenIdempotentMigrations(t *testing.T) {
 		t.Fatalf("data did not persist: %v %#v", err, got)
 	}
 
+	embedded, err := fs.Glob(migrations.FS, "*.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
 	var n int
 	if err := s2.DB().QueryRowContext(ctx, `SELECT count(*) FROM schema_migrations`).Scan(&n); err != nil {
 		t.Fatalf("count schema_migrations: %v", err)
 	}
-	if n != 1 {
-		t.Fatalf("want 1 migration recorded, got %d", n)
+	if n != len(embedded) {
+		t.Fatalf("want %d migrations recorded, got %d", len(embedded), n)
 	}
 
-	var id string
-	if err := s2.DB().QueryRowContext(ctx, `SELECT id FROM schema_migrations`).Scan(&id); err != nil {
-		t.Fatalf("read migration id: %v", err)
+	rows, err := s2.DB().QueryContext(ctx, `SELECT id FROM schema_migrations ORDER BY id`)
+	if err != nil {
+		t.Fatalf("read migration ids: %v", err)
 	}
-	if id != "0001_initial.sql" {
-		t.Fatalf("want 0001_initial.sql recorded, got %q", id)
+	defer rows.Close()
+	var applied []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			t.Fatal(err)
+		}
+		applied = append(applied, id)
+	}
+	sort.Strings(embedded)
+	if !reflect.DeepEqual(applied, embedded) {
+		t.Fatalf("recorded migrations %v, want %v", applied, embedded)
 	}
 }
 
@@ -141,7 +163,7 @@ func TestDeleteUserCascades(t *testing.T) {
 		t.Fatal(err)
 	}
 	svc, _ := s.CreateService(ctx, CreateServiceInput{
-		Name: "jelly", Hostname: "jelly.local", Origin: "host", IPAddress: "10.6.1.5",
+		Name: "jelly", Hostname: "jelly.local", Origin: origin.Spec{Kind: origin.Host}, IPAddress: "10.6.1.5",
 	})
 	if _, err := s.CreatePolicy(ctx, CreatePolicyInput{
 		SubjectType: "user", SubjectID: u.ID, ObjectType: "service", ObjectID: svc.ID, Action: "allow",
@@ -169,7 +191,7 @@ func TestServicePortConflictAndProtocols(t *testing.T) {
 	ctx := context.Background()
 
 	_, err := s.CreateService(ctx, CreateServiceInput{
-		Name: "dup", Hostname: "dup.local", Origin: "host", IPAddress: "10.6.1.10",
+		Name: "dup", Hostname: "dup.local", Origin: origin.Spec{Kind: origin.Host}, IPAddress: "10.6.1.10",
 		Ports: []ServicePort{{Port: 8080, Protocol: "tcp"}, {Port: 8080, Protocol: "tcp"}},
 	})
 	if err == nil {
@@ -177,7 +199,7 @@ func TestServicePortConflictAndProtocols(t *testing.T) {
 	}
 
 	svc, err := s.CreateService(ctx, CreateServiceInput{
-		Name: "ok", Hostname: "ok.local", Origin: "host", IPAddress: "10.6.1.11",
+		Name: "ok", Hostname: "ok.local", Origin: origin.Spec{Kind: origin.Host}, IPAddress: "10.6.1.11",
 		Ports: []ServicePort{{Port: 8080, Protocol: "tcp"}, {Port: 8080, Protocol: "udp"}},
 	})
 	if err != nil {
@@ -192,7 +214,7 @@ func TestServiceEmptyPortsAllowed(t *testing.T) {
 	s := openTest(t)
 	ctx := context.Background()
 	svc, err := s.CreateService(ctx, CreateServiceInput{
-		Name: "wild", Hostname: "wild.local", Origin: "host", IPAddress: "10.6.1.12",
+		Name: "wild", Hostname: "wild.local", Origin: origin.Spec{Kind: origin.Host}, IPAddress: "10.6.1.12",
 	})
 	if err != nil {
 		t.Fatalf("empty ports: %v", err)
@@ -205,13 +227,32 @@ func TestServiceEmptyPortsAllowed(t *testing.T) {
 func TestServiceValidationErrors(t *testing.T) {
 	s := openTest(t)
 	ctx := context.Background()
-	base := CreateServiceInput{Name: "a", Hostname: "a.local", Origin: "host", IPAddress: "10.6.1.20"}
+	base := CreateServiceInput{Name: "a", Hostname: "a.local", Origin: origin.Spec{Kind: origin.Host}, IPAddress: "10.6.1.20"}
 
 	cases := map[string]func(CreateServiceInput) CreateServiceInput{
 		"empty name":     func(in CreateServiceInput) CreateServiceInput { in.Name = ""; return in },
 		"empty hostname": func(in CreateServiceInput) CreateServiceInput { in.Hostname = ""; return in },
-		"empty origin":   func(in CreateServiceInput) CreateServiceInput { in.Origin = ""; return in },
-		"empty ip":       func(in CreateServiceInput) CreateServiceInput { in.IPAddress = ""; return in },
+		"empty origin kind": func(in CreateServiceInput) CreateServiceInput {
+			in.Origin = origin.Spec{}
+			return in
+		},
+		"unknown origin kind": func(in CreateServiceInput) CreateServiceInput {
+			in.Origin = origin.Spec{Kind: "nonsense", Value: "x"}
+			return in
+		},
+		"container origin without value": func(in CreateServiceInput) CreateServiceInput {
+			in.Origin = origin.Spec{Kind: origin.Container}
+			return in
+		},
+		"host origin with a value": func(in CreateServiceInput) CreateServiceInput {
+			in.Origin = origin.Spec{Kind: origin.Host, Value: "nope"}
+			return in
+		},
+		"malformed ip origin": func(in CreateServiceInput) CreateServiceInput {
+			in.Origin = origin.Spec{Kind: origin.IP, Value: "999.1.1.1"}
+			return in
+		},
+		"empty ip": func(in CreateServiceInput) CreateServiceInput { in.IPAddress = ""; return in },
 	}
 	for name, mut := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -226,24 +267,24 @@ func TestServiceDuplicateNameVIPHostname(t *testing.T) {
 	s := openTest(t)
 	ctx := context.Background()
 	_, err := s.CreateService(ctx, CreateServiceInput{
-		Name: "a", Hostname: "a.local", Origin: "host", IPAddress: "10.6.1.20",
+		Name: "a", Hostname: "a.local", Origin: origin.Spec{Kind: origin.Host}, IPAddress: "10.6.1.20",
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	if _, err := s.CreateService(ctx, CreateServiceInput{
-		Name: "a", Hostname: "b.local", Origin: "host", IPAddress: "10.6.1.21",
+		Name: "a", Hostname: "b.local", Origin: origin.Spec{Kind: origin.Host}, IPAddress: "10.6.1.21",
 	}); !errors.Is(err, ErrNameTaken) {
 		t.Fatalf("dup name: want ErrNameTaken, got %v", err)
 	}
 	if _, err := s.CreateService(ctx, CreateServiceInput{
-		Name: "b", Hostname: "b.local", Origin: "host", IPAddress: "10.6.1.20",
+		Name: "b", Hostname: "b.local", Origin: origin.Spec{Kind: origin.Host}, IPAddress: "10.6.1.20",
 	}); !errors.Is(err, ErrIPInUse) {
 		t.Fatalf("dup vip: want ErrIPInUse, got %v", err)
 	}
 	if _, err := s.CreateService(ctx, CreateServiceInput{
-		Name: "c", Hostname: "a.local", Origin: "host", IPAddress: "10.6.1.22",
+		Name: "c", Hostname: "a.local", Origin: origin.Spec{Kind: origin.Host}, IPAddress: "10.6.1.22",
 	}); !errors.Is(err, ErrNameTaken) {
 		t.Fatalf("dup hostname: want ErrNameTaken, got %v", err)
 	}
@@ -253,11 +294,11 @@ func TestUpdateServiceFields(t *testing.T) {
 	s := openTest(t)
 	ctx := context.Background()
 	svc, _ := s.CreateService(ctx, CreateServiceInput{
-		Name: "a", Hostname: "a.local", Origin: "host", IPAddress: "10.6.1.20",
+		Name: "a", Hostname: "a.local", Origin: origin.Spec{Kind: origin.Host}, IPAddress: "10.6.1.20",
 		Ports: []ServicePort{{Port: 80, Protocol: "tcp"}},
 	})
 
-	newOrigin := "container1"
+	newOrigin := origin.Spec{Kind: origin.Container, Value: "container1"}
 	newHost := "renamed.local"
 	newDesc := "hello"
 	out, err := s.UpdateService(ctx, svc.ID, UpdateServiceInput{
@@ -279,7 +320,7 @@ func TestDeleteServiceCascades(t *testing.T) {
 	s := openTest(t)
 	ctx := context.Background()
 	svc, _ := s.CreateService(ctx, CreateServiceInput{
-		Name: "a", Hostname: "a.local", Origin: "host", IPAddress: "10.6.1.20",
+		Name: "a", Hostname: "a.local", Origin: origin.Spec{Kind: origin.Host}, IPAddress: "10.6.1.20",
 		Ports: []ServicePort{{Port: 80, Protocol: "tcp"}},
 	})
 	sg, _ := s.CreateServiceGroup(ctx, "grp")
@@ -321,7 +362,7 @@ func TestPolicyInvalidInputs(t *testing.T) {
 		Name: "alice", PublicKey: "pk", PrivateKey: "sk", PresharedKey: "psk", IPAddress: "10.6.0.2",
 	})
 	svc, _ := s.CreateService(ctx, CreateServiceInput{
-		Name: "a", Hostname: "a.local", Origin: "host", IPAddress: "10.6.1.20",
+		Name: "a", Hostname: "a.local", Origin: origin.Spec{Kind: origin.Host}, IPAddress: "10.6.1.20",
 	})
 
 	cases := map[string]CreatePolicyInput{
@@ -342,7 +383,7 @@ func TestPolicyMissingSubjectObject(t *testing.T) {
 	s := openTest(t)
 	ctx := context.Background()
 	svc, _ := s.CreateService(ctx, CreateServiceInput{
-		Name: "a", Hostname: "a.local", Origin: "host", IPAddress: "10.6.1.20",
+		Name: "a", Hostname: "a.local", Origin: origin.Spec{Kind: origin.Host}, IPAddress: "10.6.1.20",
 	})
 	if _, err := s.CreatePolicy(ctx, CreatePolicyInput{
 		SubjectType: "user", SubjectID: 999, ObjectType: "service", ObjectID: svc.ID, Action: "allow",
@@ -358,7 +399,7 @@ func TestPolicyUpsertOnSameSubjectObject(t *testing.T) {
 		Name: "alice", PublicKey: "pk", PrivateKey: "sk", PresharedKey: "psk", IPAddress: "10.6.0.2",
 	})
 	svc, _ := s.CreateService(ctx, CreateServiceInput{
-		Name: "a", Hostname: "a.local", Origin: "host", IPAddress: "10.6.1.20",
+		Name: "a", Hostname: "a.local", Origin: origin.Spec{Kind: origin.Host}, IPAddress: "10.6.1.20",
 	})
 	first, err := s.CreatePolicy(ctx, CreatePolicyInput{
 		SubjectType: "user", SubjectID: u.ID, ObjectType: "service", ObjectID: svc.ID, Action: "allow",
@@ -445,7 +486,7 @@ func TestServiceGroupMembership(t *testing.T) {
 	s := openTest(t)
 	ctx := context.Background()
 	svc, _ := s.CreateService(ctx, CreateServiceInput{
-		Name: "a", Hostname: "a.local", Origin: "host", IPAddress: "10.6.1.20",
+		Name: "a", Hostname: "a.local", Origin: origin.Spec{Kind: origin.Host}, IPAddress: "10.6.1.20",
 	})
 	g, _ := s.CreateServiceGroup(ctx, "grp")
 
@@ -488,7 +529,7 @@ func TestNamespaceCollisions(t *testing.T) {
 	}
 
 	if _, err := s.CreateService(ctx, CreateServiceInput{
-		Name: "store", Hostname: "store.local", Origin: "host", IPAddress: "10.6.1.5",
+		Name: "store", Hostname: "store.local", Origin: origin.Spec{Kind: origin.Host}, IPAddress: "10.6.1.5",
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -497,7 +538,7 @@ func TestNamespaceCollisions(t *testing.T) {
 	}
 
 	if _, err := s.CreateService(ctx, CreateServiceInput{
-		Name: "alice", Hostname: "alice.local", Origin: "host", IPAddress: "10.6.1.6",
+		Name: "alice", Hostname: "alice.local", Origin: origin.Spec{Kind: origin.Host}, IPAddress: "10.6.1.6",
 	}); err != nil {
 		t.Fatalf("user/service same name should be allowed, got %v", err)
 	}
@@ -582,5 +623,73 @@ func TestMultipleSubscribersFire(t *testing.T) {
 	}
 	if a != ChangeUserGroups || b != ChangeUserGroups {
 		t.Fatalf("both subscribers should fire ChangeUserGroups, got %q %q", a, b)
+	}
+}
+
+func TestOriginBackfillFromLegacySchema(t *testing.T) {
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "legacy.db")
+
+	raw, err := sql.Open("sqlite", "file:"+path+"?_pragma=foreign_keys(ON)")
+	if err != nil {
+		t.Fatal(err)
+	}
+	initial, err := migrations.FS.ReadFile("0001_initial.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := raw.ExecContext(ctx, string(initial)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := raw.ExecContext(ctx, `CREATE TABLE schema_migrations (
+	  id TEXT PRIMARY KEY, applied_at TEXT NOT NULL)`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := raw.ExecContext(ctx,
+		`INSERT INTO schema_migrations (id, applied_at) VALUES ('0001_initial.sql', 'x')`); err != nil {
+		t.Fatal(err)
+	}
+
+	legacy := []struct {
+		name, origin string
+		want         origin.Spec
+	}{
+		{"a", "host", origin.Spec{Kind: origin.Host}},
+		{"b", "", origin.Spec{Kind: origin.Host}},
+		{"c", "  host  ", origin.Spec{Kind: origin.Host}},
+		{"d", "192.168.1.50", origin.Spec{Kind: origin.IP, Value: "192.168.1.50"}},
+		{"e", "fd00::1", origin.Spec{Kind: origin.IP, Value: "fd00::1"}},
+		{"f", "git.internal", origin.Spec{Kind: origin.Hostname, Value: "git.internal"}},
+		{"g", "jellyfin", origin.Spec{Kind: origin.Container, Value: "jellyfin"}},
+	}
+	for i, l := range legacy {
+		if _, err := raw.ExecContext(ctx,
+			`INSERT INTO services (name, hostname, origin, ip_address, created_at, updated_at)
+			 VALUES (?, ?, ?, ?, 't', 't')`,
+			l.name, l.name+".local", l.origin, fmt.Sprintf("10.6.1.%d", i+10)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := raw.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	s, err := Open(path)
+	if err != nil {
+		t.Fatalf("open (runs 0002): %v", err)
+	}
+	defer s.Close()
+
+	for _, l := range legacy {
+		svc, err := s.GetServiceByName(ctx, l.name)
+		if err != nil {
+			t.Fatalf("%s (%q): %v", l.name, l.origin, err)
+		}
+		if svc.Origin != l.want {
+			t.Errorf("legacy origin %q became %+v, want %+v", l.origin, svc.Origin, l.want)
+		}
+		if _, err := origin.Validate(svc.Origin); err != nil {
+			t.Errorf("legacy origin %q backfilled to an invalid spec: %v", l.origin, err)
+		}
 	}
 }

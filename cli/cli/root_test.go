@@ -16,11 +16,9 @@ func TestNewRootShape(t *testing.T) {
 		"user": false, "user-group": false, "service": false,
 		"service-group": false, "policy": false, "status": false,
 		"dns": false, "peers": false, "connections": false,
+		"serve": false,
 	}
 	for _, c := range root.Commands() {
-		if c.Name() == "serve" {
-			t.Error("unexpected 'serve' command present")
-		}
 		if _, ok := want[c.Name()]; ok {
 			want[c.Name()] = true
 		}

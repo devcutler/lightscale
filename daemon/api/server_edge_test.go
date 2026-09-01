@@ -38,7 +38,7 @@ func TestPrincipalsAndObjects(t *testing.T) {
 	if rr := do(t, srv, "POST", "/api/user-groups", map[string]any{"name": "team"}); rr.Code != http.StatusCreated {
 		t.Fatal(rr.Body.String())
 	}
-	if rr := do(t, srv, "POST", "/api/services", map[string]any{"name": "jelly", "origin": "host", "ports": "8096/tcp"}); rr.Code != http.StatusCreated {
+	if rr := do(t, srv, "POST", "/api/services", map[string]any{"name": "jelly", "origin_kind": "host", "ports": "8096/tcp"}); rr.Code != http.StatusCreated {
 		t.Fatal(rr.Body.String())
 	}
 	if rr := do(t, srv, "POST", "/api/service-groups", map[string]any{"name": "media"}); rr.Code != http.StatusCreated {
@@ -168,7 +168,7 @@ func TestServiceGroupMembers(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	rr = do(t, srv, "POST", "/api/services", map[string]any{"name": "jelly", "origin": "host", "ports": "8096/tcp"})
+	rr = do(t, srv, "POST", "/api/services", map[string]any{"name": "jelly", "origin_kind": "host", "ports": "8096/tcp"})
 	if rr.Code != http.StatusCreated {
 		t.Fatal(rr.Body.String())
 	}
@@ -243,11 +243,11 @@ func TestConflictNameTaken(t *testing.T) {
 
 func TestConflictIPInUse(t *testing.T) {
 	srv := newTestServer(t)
-	body := map[string]any{"name": "svc1", "origin": "host", "ports": "80/tcp", "ip": "10.6.1.50"}
+	body := map[string]any{"name": "svc1", "origin_kind": "host", "ports": "80/tcp", "ip": "10.6.1.50"}
 	if rr := do(t, srv, "POST", "/api/services", body); rr.Code != http.StatusCreated {
 		t.Fatal(rr.Body.String())
 	}
-	body2 := map[string]any{"name": "svc2", "origin": "host", "ports": "81/tcp", "ip": "10.6.1.50"}
+	body2 := map[string]any{"name": "svc2", "origin_kind": "host", "ports": "81/tcp", "ip": "10.6.1.50"}
 	rr := do(t, srv, "POST", "/api/services", body2)
 	if rr.Code != http.StatusConflict {
 		t.Fatalf("duplicate IP: %d %s, want 409", rr.Code, rr.Body.String())
@@ -349,5 +349,89 @@ func TestUserConfigNoServerKey(t *testing.T) {
 	rr = do(t, srv, "GET", "/api/users/"+itoa(u.ID)+"/config", nil)
 	if rr.Code != http.StatusServiceUnavailable {
 		t.Fatalf("config without server key: %d %s, want 503", rr.Code, rr.Body.String())
+	}
+}
+
+func newTestServerWithDNS(t *testing.T, dns []string) *Server {
+	t.Helper()
+	s, err := store.Open(filepath.Join(t.TempDir(), "api.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = s.Close() })
+
+	cfg := config.Defaults()
+	cfg.PublicEndpoint = "vpn.example.com:51820"
+	cfg.Domain = "lightscale.local"
+	cfg.WireGuard.DNS = dns
+
+	if err := s.SetSetting(context.Background(), "server_public_key", "FAKE_SERVER_PUBLIC_KEY=="); err != nil {
+		t.Fatal(err)
+	}
+	return New(Deps{Store: s, Config: &cfg})
+}
+
+func userConfText(t *testing.T, srv *Server) string {
+	t.Helper()
+	rr := do(t, srv, "POST", "/api/users", map[string]any{"name": "alice"})
+	if rr.Code != http.StatusCreated {
+		t.Fatal(rr.Body.String())
+	}
+	var u wire.User
+	if err := json.Unmarshal(rr.Body.Bytes(), &u); err != nil {
+		t.Fatal(err)
+	}
+	rr = do(t, srv, "GET", "/api/users/"+itoa(u.ID)+"/config", nil)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("config: %d %s", rr.Code, rr.Body.String())
+	}
+	return rr.Body.String()
+}
+
+func TestUserConfigDNSOmittedWhenUnset(t *testing.T) {
+	conf := userConfText(t, newTestServerWithDNS(t, nil))
+	if strings.Contains(conf, "DNS") {
+		t.Errorf("no dns configured, so the .conf must have no DNS line:\n%s", conf)
+	}
+}
+
+func TestUserConfigDNSSingle(t *testing.T) {
+	conf := userConfText(t, newTestServerWithDNS(t, []string{"1.1.1.1"}))
+	if !strings.Contains(conf, "DNS = 1.1.1.1\n") {
+		t.Errorf("want a single DNS entry:\n%s", conf)
+	}
+}
+
+func TestUserConfigDNSMultiple(t *testing.T) {
+	conf := userConfText(t, newTestServerWithDNS(t, []string{"1.1.1.1", "8.8.8.8"}))
+	if !strings.Contains(conf, "DNS = 1.1.1.1, 8.8.8.8\n") {
+		t.Errorf("want comma-separated DNS entries on one line:\n%s", conf)
+	}
+}
+
+func TestUserConfigDNSSitsInInterfaceSection(t *testing.T) {
+	conf := userConfText(t, newTestServerWithDNS(t, []string{"10.6.0.1"}))
+	iface := strings.Index(conf, "[Interface]")
+	dns := strings.Index(conf, "DNS =")
+	peer := strings.Index(conf, "[Peer]")
+	if iface < 0 || dns < 0 || peer < 0 {
+		t.Fatalf("missing a section:\n%s", conf)
+	}
+	if !(iface < dns && dns < peer) {
+		t.Errorf("DNS must be inside [Interface], before [Peer]:\n%s", conf)
+	}
+}
+
+func TestUserConfigDNSSkipsBlankEntries(t *testing.T) {
+	conf := userConfText(t, newTestServerWithDNS(t, []string{"", "  ", "9.9.9.9", ""}))
+	if !strings.Contains(conf, "DNS = 9.9.9.9\n") {
+		t.Errorf("blank entries should be dropped:\n%s", conf)
+	}
+}
+
+func TestUserConfigDNSAllBlankOmitsLine(t *testing.T) {
+	conf := userConfText(t, newTestServerWithDNS(t, []string{"", "   "}))
+	if strings.Contains(conf, "DNS") {
+		t.Errorf("all-blank dns must not emit a DNS line:\n%s", conf)
 	}
 }

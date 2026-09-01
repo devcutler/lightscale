@@ -2,6 +2,7 @@ package proxy
 
 import (
 	"context"
+	"log/slog"
 	"net"
 	"strconv"
 	"sync"
@@ -14,6 +15,7 @@ type UDPHandler struct {
 	Policy      *policy.Holder
 	Flows       *policy.FlowTable
 	Resolver    *BackendResolver
+	Logger      *slog.Logger
 	IdleTimeout time.Duration
 
 	mu    sync.Mutex
@@ -34,11 +36,15 @@ type udpFlow struct {
 	flowID   uint64
 }
 
-func NewUDPHandler(p *policy.Holder, ft *policy.FlowTable, r *BackendResolver) *UDPHandler {
+func NewUDPHandler(p *policy.Holder, ft *policy.FlowTable, r *BackendResolver, logger *slog.Logger) *UDPHandler {
+	if logger == nil {
+		logger = slog.Default()
+	}
 	return &UDPHandler{
 		Policy:      p,
 		Flows:       ft,
 		Resolver:    r,
+		Logger:      logger,
 		IdleTimeout: 60 * time.Second,
 		flows:       map[udpKey]*udpFlow{},
 	}
@@ -61,20 +67,28 @@ func (h *UDPHandler) HandlePacket(ctx context.Context, inbound net.PacketConn, s
 	h.mu.Lock()
 	flow, ok := h.flows[key]
 	if !ok {
-		backendIP, err := h.Resolver.Resolve(ctx, svc.Origin)
+		target, err := h.Resolver.Resolve(ctx, svc.Origin, dstPort, "udp")
 		if err != nil {
 			h.mu.Unlock()
+			h.Logger.Warn("proxy: udp resolve failed",
+				"service", svc.Name, "origin", svc.Origin.String(), "port", dstPort, "err", err)
 			return
 		}
-		raddr, err := net.ResolveUDPAddr("udp", net.JoinHostPort(backendIP, strconv.Itoa(dstPort)))
+		backend := net.JoinHostPort(target.DialHost, strconv.Itoa(dstPort))
+		raddr, err := net.ResolveUDPAddr("udp", backend)
 		if err != nil {
 			h.mu.Unlock()
+			h.Logger.Warn("proxy: udp address resolve failed",
+				"service", svc.Name, "origin", svc.Origin.String(), "backend", backend, "err", err)
 			return
 		}
 		out, err := net.DialUDP("udp", nil, raddr)
 		if err != nil {
 			h.Resolver.Invalidate(svc.Origin)
 			h.mu.Unlock()
+			h.Logger.Warn("proxy: udp dial failed",
+				"service", svc.Name, "origin", svc.Origin.String(),
+				"backend", backend, "via", target.Detail, "err", err)
 			return
 		}
 		flowCtx, cancel := context.WithCancel(ctx)

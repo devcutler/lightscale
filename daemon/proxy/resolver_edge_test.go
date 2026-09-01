@@ -2,141 +2,162 @@ package proxy
 
 import (
 	"context"
+	"errors"
+	"io"
+	"log/slog"
 	"strings"
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/devcutler/lightscale/daemon/docker"
+	"github.com/devcutler/lightscale/shared/origin"
 )
 
-func TestSafeBackendIP(t *testing.T) {
-	cases := []struct {
-		ip      string
-		wantErr bool
-	}{
-		{"127.0.0.1", true},
-		{"::1", true},
-		{"169.254.0.1", true},
-		{"169.254.169.254", true},
-		{"fe80::1", true},
-		{"0.0.0.0", true},
-		{"::", true},
-		{"224.0.0.1", true},
-		{"239.255.255.250", true},
-		{"ff02::1", true},
-		{"not-an-ip", true},
-		{"10.0.0.5", false},
-		{"172.16.3.4", false},
-		{"192.168.1.50", false},
-		{"8.8.8.8", false},
-		{"2001:4860:4860::8888", false},
+func discardLogger() *slog.Logger {
+	return slog.New(slog.NewTextHandler(io.Discard, nil))
+}
+
+func TestResolveRejectsInvalidSpecs(t *testing.T) {
+	r := testResolver(t)
+	ctx := context.Background()
+	bad := []origin.Spec{
+		{},
+		{Kind: "nonsense", Value: "x"},
+		{Kind: origin.Container},
+		{Kind: origin.Host, Value: "something"},
+		{Kind: origin.IP, Value: "999.999.999.999"},
+		{Kind: origin.IP, Value: "127.0.0.1"},
+		{Kind: origin.IP, Value: "169.254.169.254"},
+		{Kind: origin.Hostname, Value: "x", Network: "n"},
 	}
-	for _, c := range cases {
-		t.Run(c.ip, func(t *testing.T) {
-			err := safeBackendIP(c.ip)
-			if c.wantErr && err == nil {
-				t.Fatalf("want error for %q, got nil", c.ip)
-			}
-			if !c.wantErr && err != nil {
-				t.Fatalf("want nil for %q, got %v", c.ip, err)
-			}
-		})
+	for _, spec := range bad {
+		if _, err := r.Resolve(ctx, spec, 80, "tcp"); err == nil {
+			t.Errorf("want rejection for %+v", spec)
+		}
 	}
 }
 
-func TestResolveOriginPaths(t *testing.T) {
-	r := NewResolver(nil)
-	ctx := context.Background()
-
-	if got, err := r.Resolve(ctx, "host"); err != nil || got != "127.0.0.1" {
-		t.Fatalf("host: got %q err=%v", got, err)
+func TestSelectEndpointProbePicksLiveCandidate(t *testing.T) {
+	r := testResolver(t)
+	r.probe = func(_ context.Context, _, addr string) error {
+		if strings.HasPrefix(addr, "10.9.0.4:") {
+			return nil
+		}
+		return errors.New("connection refused")
 	}
-	if got, err := r.Resolve(ctx, "  host  "); err != nil || got != "127.0.0.1" {
-		t.Fatalf("whitespace-trimmed host: got %q err=%v", got, err)
+	eps := []docker.Endpoint{
+		{Network: "a", IP: "10.5.0.4"},
+		{Network: "b", IP: "10.9.0.4"},
 	}
-
-	if got, err := r.Resolve(ctx, ""); err != nil || got != "127.0.0.1" {
-		t.Fatalf("empty origin defaults to host: got %q err=%v", got, err)
-	}
-	if got, err := r.Resolve(ctx, "   "); err != nil || got != "127.0.0.1" {
-		t.Fatalf("whitespace origin defaults to host: got %q err=%v", got, err)
-	}
-
-	if got, err := r.Resolve(ctx, "10.0.0.9"); err != nil || got != "10.0.0.9" {
-		t.Fatalf("ip literal: got %q err=%v", got, err)
-	}
-
-	if _, err := r.Resolve(ctx, "127.0.0.1"); err == nil {
-		t.Fatal("loopback literal: want rejection")
-	}
-	if _, err := r.Resolve(ctx, "169.254.169.254"); err == nil {
-		t.Fatal("metadata literal: want rejection")
-	}
-}
-
-func TestResolveIPLiteralNotCached(t *testing.T) {
-
-	r := NewResolver(nil)
-	ctx := context.Background()
-	if _, err := r.Resolve(ctx, "10.0.0.9"); err != nil {
+	got, err := r.selectEndpoint(context.Background(),
+		origin.Spec{Kind: origin.Container, Value: "web"}, eps, 8080, "tcp")
+	if err != nil {
 		t.Fatal(err)
 	}
-	r.mu.Lock()
-	n := len(r.cache)
-	r.mu.Unlock()
-	if n != 0 {
-		t.Fatalf("ip-literal path should not populate cache, got %d entries", n)
+	if got.DialHost != "10.9.0.4" || got.Network != "b" {
+		t.Fatalf("probe should select the answering endpoint, got %+v", got)
 	}
 }
 
-func TestInvalidateTTLExpiry(t *testing.T) {
+func TestSelectEndpointFallsBackWhenNoProbeSucceeds(t *testing.T) {
+	r := testResolver(t)
+	eps := []docker.Endpoint{
+		{Network: "a", IP: "10.5.0.4", Shared: true},
+		{Network: "b", IP: "10.9.0.4"},
+	}
+	got, err := r.selectEndpoint(context.Background(),
+		origin.Spec{Kind: origin.Container, Value: "web"}, eps, 8080, "tcp")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.DialHost != "10.5.0.4" {
+		t.Fatalf("want first ranked candidate, got %+v", got)
+	}
+}
 
-	r := NewResolver(nil)
-	r.cache["stale.example"] = cacheEntry{ip: "10.1.1.1", expires: time.Now().Add(-time.Minute)}
+func TestSelectEndpointSkipsProbeForUDP(t *testing.T) {
+	r := testResolver(t)
+	probed := false
+	r.probe = func(context.Context, string, string) error {
+		probed = true
+		return nil
+	}
+	eps := []docker.Endpoint{
+		{Network: "a", IP: "10.5.0.4"},
+		{Network: "b", IP: "10.9.0.4"},
+	}
+	got, err := r.selectEndpoint(context.Background(),
+		origin.Spec{Kind: origin.Container, Value: "web"}, eps, 9001, "udp")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if probed {
+		t.Error("UDP selection must not probe")
+	}
+	if got.DialHost != "10.5.0.4" {
+		t.Fatalf("want deterministic first candidate, got %+v", got)
+	}
+}
 
-	r.Invalidate("stale.example")
-	r.mu.Lock()
-	_, ok := r.cache["stale.example"]
-	r.mu.Unlock()
-	if ok {
-		t.Fatal("entry should be gone after Invalidate")
+func TestSelectEndpointSkipsUnsafeAddresses(t *testing.T) {
+	r := testResolver(t)
+	eps := []docker.Endpoint{
+		{Network: "bad", IP: "127.0.0.1"},
+		{Network: "ok", IP: "10.9.0.4"},
+	}
+	got, err := r.selectEndpoint(context.Background(),
+		origin.Spec{Kind: origin.Container, Value: "web"}, eps, 0, "tcp")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.DialHost != "10.9.0.4" {
+		t.Fatalf("unsafe candidate must be skipped, got %+v", got)
+	}
+}
+
+func TestSelectEndpointAllUnsafeFails(t *testing.T) {
+	r := testResolver(t)
+	eps := []docker.Endpoint{{Network: "bad", IP: "127.0.0.1"}}
+	if _, err := r.selectEndpoint(context.Background(),
+		origin.Spec{Kind: origin.Container, Value: "web"}, eps, 0, "tcp"); !errors.Is(err, ErrOriginUnreachable) {
+		t.Fatalf("want ErrOriginUnreachable, got %v", err)
 	}
 }
 
 func TestResolverConcurrency(t *testing.T) {
-	r := NewResolver(nil)
+	r := testResolver(t)
+	r.lookupHost = func(context.Context, string) ([]string, error) {
+		return []string{"10.0.0.1"}, nil
+	}
 	ctx := context.Background()
-	origins := []string{"10.0.0.1", "10.0.0.2", "192.168.5.5", "172.16.0.9"}
+	specs := []origin.Spec{
+		{Kind: origin.IP, Value: "10.0.0.1"},
+		{Kind: origin.IP, Value: "10.0.0.2"},
+		{Kind: origin.Hostname, Value: "a.example"},
+		{Kind: origin.Container, Value: "web"},
+		{Kind: origin.Host},
+	}
 
 	var wg sync.WaitGroup
-	for i := range 50 {
+	for i := range 100 {
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()
-			o := origins[i%len(origins)]
-			if got, err := r.Resolve(ctx, o); err != nil || got != o {
-				t.Errorf("resolve %s: got %q err=%v", o, got, err)
+			s := specs[i%len(specs)]
+			if _, err := r.Resolve(ctx, s, 80, "tcp"); err != nil {
+				t.Errorf("resolve %+v: %v", s, err)
 			}
 		}(i)
 	}
-
-	for i := range 10 {
+	for i := range 20 {
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()
-			o := origins[i%len(origins)]
-			r.mu.Lock()
-			r.cache[o] = cacheEntry{ip: o, expires: time.Now().Add(time.Hour)}
-			r.mu.Unlock()
-			r.Invalidate(o)
+			s := specs[i%len(specs)]
+			r.store(s, Target{DialHost: "x"}, time.Hour)
+			r.Invalidate(s)
 		}(i)
 	}
 	wg.Wait()
-}
-
-func TestSafeBackendIPMessageMentionsHost(t *testing.T) {
-
-	err := safeBackendIP("127.0.0.1")
-	if err == nil || !strings.Contains(err.Error(), "host") {
-		t.Fatalf("want loopback error mentioning host, got %v", err)
-	}
 }

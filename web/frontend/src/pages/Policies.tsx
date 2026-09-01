@@ -34,6 +34,7 @@ export function Policies() {
 			key: "subject",
 			header: "Subject",
 			value: (p) => p.subject_name,
+			search: (p) => TYPE_LABEL[p.subject_type] ?? p.subject_type,
 			sortable: true,
 			render: (p) => (
 				<span>
@@ -44,9 +45,10 @@ export function Policies() {
 		{
 			key: "arrow",
 			header: "",
-			render: () => (
+			value: (p) => (p.action === "deny" ? "may not connect to" : "may connect to"),
+			render: (p) => (
 				<span className="dim policy-arrow-cell">
-					may connect to <ArrowRight size={14} />
+					{p.action === "deny" ? "may not connect to" : "may connect to"} <ArrowRight size={14} />
 				</span>
 			),
 		},
@@ -54,11 +56,21 @@ export function Policies() {
 			key: "object",
 			header: "Object",
 			value: (p) => p.object_name,
+			search: (p) => TYPE_LABEL[p.object_type] ?? p.object_type,
 			sortable: true,
 			render: (p) => (
 				<span>
 					<TypeBadge type={p.object_type} /> {p.object_name}
 				</span>
+			),
+		},
+		{
+			key: "action",
+			header: "Action",
+			value: (p) => p.action,
+			sortable: true,
+			render: (p) => (
+				<span className={"action-badge action-" + p.action}>{p.action}</span>
 			),
 		},
 		{
@@ -124,6 +136,7 @@ function PolicyModal({
 
 	const [subject, setSubject] = useState("");
 	const [object, setObject] = useState("");
+	const [action, setAction] = useState("allow");
 
 	const onSubmit = async () => {
 		const sp = (principals.data ?? []).find((p) => `${p.type}:${p.id}` === subject);
@@ -134,7 +147,7 @@ function PolicyModal({
 			subject_id: sp.id,
 			object_type: ob.type,
 			object_id: ob.id,
-			action: "allow",
+			action,
 		});
 		toast.ok("Policy added");
 		onSaved();
@@ -166,9 +179,16 @@ function PolicyModal({
 					}))}
 				/>
 			</Field>
-			<div className="policy-arrow">
-				<ArrowRight size={14} /> may connect to <ArrowRight size={14} />
-			</div>
+			<Field label="Action" hint="allow grants access; deny overrides any allow">
+				<Select
+					value={action}
+					onChange={setAction}
+					options={[
+						{ value: "allow", label: "allow" },
+						{ value: "deny", label: "deny" },
+					]}
+				/>
+			</Field>
 			<Field label="Object" hint="what they may reach">
 				<Select
 					value={object}

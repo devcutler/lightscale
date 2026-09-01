@@ -5,13 +5,15 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+
+	"github.com/devcutler/lightscale/shared/origin"
 )
 
 type Service struct {
 	ID          int64
 	Name        string
 	Hostname    string
-	Origin      string
+	Origin      origin.Spec
 	IPAddress   string
 	Description string
 	Ports       []ServicePort
@@ -27,19 +29,24 @@ type ServicePort struct {
 type CreateServiceInput struct {
 	Name        string
 	Hostname    string
-	Origin      string
+	Origin      origin.Spec
 	IPAddress   string
 	Description string
 	Ports       []ServicePort
 }
 
 func (s *Store) CreateService(ctx context.Context, in CreateServiceInput) (Service, error) {
-	if in.Name == "" || in.Hostname == "" || in.Origin == "" || in.IPAddress == "" {
+	if in.Name == "" || in.Hostname == "" || in.IPAddress == "" {
 		return Service{}, ErrInvalidInput
 	}
+	spec, err := origin.Validate(in.Origin)
+	if err != nil {
+		return Service{}, fmt.Errorf("%w: %s", ErrInvalidInput, err)
+	}
+	in.Origin = spec
 	now := nowTimestamp()
 	var out Service
-	err := s.withTx(ctx, ChangeServices, func(tx *sql.Tx) error {
+	err = s.withTx(ctx, ChangeServices, func(tx *sql.Tx) error {
 		if err := checkNameAvailable(tx, NamespaceObject, in.Name, "", 0); err != nil {
 			return err
 		}
@@ -50,9 +57,10 @@ func (s *Store) CreateService(ctx context.Context, in CreateServiceInput) (Servi
 			return err
 		}
 		res, err := tx.ExecContext(ctx,
-			`INSERT INTO services (name, hostname, origin, ip_address, description, created_at, updated_at)
-			 VALUES (?, ?, ?, ?, ?, ?, ?)`,
-			in.Name, in.Hostname, in.Origin, in.IPAddress, nullableString(in.Description), now, now)
+			`INSERT INTO services (name, hostname, origin_kind, origin_value, origin_network, ip_address, description, created_at, updated_at)
+			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			in.Name, in.Hostname, string(in.Origin.Kind), in.Origin.Value, in.Origin.Network,
+			in.IPAddress, nullableString(in.Description), now, now)
 		if err != nil {
 			return fmt.Errorf("store: insert service: %w", err)
 		}
@@ -77,7 +85,7 @@ func (s *Store) CreateService(ctx context.Context, in CreateServiceInput) (Servi
 type UpdateServiceInput struct {
 	Name         *string
 	Hostname     *string
-	Origin       *string
+	Origin       *origin.Spec
 	IPAddress    *string
 	Description  *string
 	Ports        []ServicePort
@@ -104,7 +112,11 @@ func (s *Store) UpdateService(ctx context.Context, id int64, in UpdateServiceInp
 			current.Hostname = *in.Hostname
 		}
 		if in.Origin != nil {
-			current.Origin = *in.Origin
+			spec, err := origin.Validate(*in.Origin)
+			if err != nil {
+				return fmt.Errorf("%w: %s", ErrInvalidInput, err)
+			}
+			current.Origin = spec
 		}
 		if in.IPAddress != nil && *in.IPAddress != current.IPAddress {
 			if err := checkIPAvailable(tx, *in.IPAddress, "services", id); err != nil {
@@ -117,8 +129,9 @@ func (s *Store) UpdateService(ctx context.Context, id int64, in UpdateServiceInp
 		}
 		current.UpdatedAt = nowTimestamp()
 		_, err = tx.ExecContext(ctx,
-			`UPDATE services SET name=?, hostname=?, origin=?, ip_address=?, description=?, updated_at=? WHERE id=?`,
-			current.Name, current.Hostname, current.Origin, current.IPAddress,
+			`UPDATE services SET name=?, hostname=?, origin_kind=?, origin_value=?, origin_network=?, ip_address=?, description=?, updated_at=? WHERE id=?`,
+			current.Name, current.Hostname, string(current.Origin.Kind), current.Origin.Value,
+			current.Origin.Network, current.IPAddress,
 			nullableString(current.Description), current.UpdatedAt, id)
 		if err != nil {
 			return fmt.Errorf("store: update service: %w", err)
@@ -200,7 +213,7 @@ func (s *Store) TakenServiceIPs(ctx context.Context) (map[string]struct{}, error
 	return out, rows.Err()
 }
 
-const serviceSelect = `SELECT id, name, hostname, origin, ip_address, COALESCE(description,''),
+const serviceSelect = `SELECT id, name, hostname, origin_kind, origin_value, origin_network, ip_address, COALESCE(description,''),
                               created_at, updated_at FROM services`
 
 func (s *Store) queryServices(ctx context.Context, tail string, args ...any) ([]Service, error) {
@@ -232,8 +245,11 @@ func (s *Store) queryServices(ctx context.Context, tail string, args ...any) ([]
 
 func scanService(r rowScanner) (Service, error) {
 	var svc Service
-	err := r.Scan(&svc.ID, &svc.Name, &svc.Hostname, &svc.Origin, &svc.IPAddress,
+	var kind string
+	err := r.Scan(&svc.ID, &svc.Name, &svc.Hostname,
+		&kind, &svc.Origin.Value, &svc.Origin.Network, &svc.IPAddress,
 		&svc.Description, &svc.CreatedAt, &svc.UpdatedAt)
+	svc.Origin.Kind = origin.Kind(kind)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Service{}, ErrNotFound
 	}

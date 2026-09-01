@@ -126,7 +126,7 @@ function GroupBody<G extends Named>({
 			setAddId("");
 			if (m) toast.ok(`Added ${m.name} to ${group.name}`);
 			members.reload();
-		});
+		}).catch(() => { });
 	};
 
 	const removeMember = (id: number, name: string) =>

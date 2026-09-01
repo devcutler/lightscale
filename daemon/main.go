@@ -133,6 +133,7 @@ subnet          = "10.6.0.0/23"
 client_subnet   = "10.6.0.0/24"
 service_subnet  = "10.6.1.0/24"
 server_ip       = "10.6.0.1"
+# dns = ["1.1.1.1", "8.8.8.8"]
 
 [socket]
 path  = "/run/lightscale/lightscale.sock"
@@ -148,8 +149,7 @@ level  = "info"
 # file = "/var/log/lightscale/lightscale.log"
 
 [docker]
-# you need this if you want to use automatic docker mapping
-# --origin will not work without it
+# you need this if you want to use automatic docker container network routing
 # socket = "/var/run/docker.sock"
 `, "\n")
 }

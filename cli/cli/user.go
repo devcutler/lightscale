@@ -58,7 +58,7 @@ func newUserCreateCmd(opts *Options) *cobra.Command {
 	cmd.Flags().StringVar(&email, "email", "", "email address")
 	cmd.Flags().StringVar(&ip, "ip", "", "specific IP (optional)")
 	cmd.Flags().StringVar(&endpoint, "endpoint", "", "per-user public endpoint override")
-	return cmd
+	return withPreview(cmd, opts, previewUserCreate)
 }
 
 func newUserListCmd(opts *Options) *cobra.Command {
@@ -148,11 +148,11 @@ func newUserUpdateCmd(opts *Options) *cobra.Command {
 	cmd.Flags().StringVar(&newName, "name", "", "new name")
 	cmd.Flags().StringVar(&email, "email", "", "new email")
 	cmd.Flags().StringVar(&endpoint, "endpoint", "", "new endpoint override")
-	return cmd
+	return withPreview(cmd, opts, previewUserUpdate)
 }
 
 func newUserDeleteCmd(opts *Options) *cobra.Command {
-	return &cobra.Command{
+	return withPreview(&cobra.Command{
 		Use:   "delete <name>",
 		Short: "Delete a user",
 		Args:  cobra.ExactArgs(1),
@@ -169,7 +169,7 @@ func newUserDeleteCmd(opts *Options) *cobra.Command {
 			fmt.Fprintf(cmd.OutOrStdout(), "deleted user %s\n", u.Name)
 			return nil
 		},
-	}
+	}, opts, previewUserDelete)
 }
 
 func newUserConfigCmd(opts *Options) *cobra.Command {

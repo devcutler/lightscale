@@ -1,6 +1,7 @@
-import { ReactNode, useEffect } from "react";
+import { ReactNode, useCallback, useEffect } from "react";
 import { X } from "lucide-react";
 import { Button } from "./Button";
+import { escapeHandled } from "./useDismiss";
 
 interface Props {
 	title: string;
@@ -21,23 +22,20 @@ export function Modal({
 	onSubmit,
 	confirmCloseIfDirty,
 }: Props) {
-	useEffect(() => {
-		const onKey = (e: KeyboardEvent) => {
-			if (e.key === "Escape") onClose();
-		};
-		window.addEventListener("keydown", onKey);
-		return () => window.removeEventListener("keydown", onKey);
-	}, [onClose]);
-
-	const onBackdrop = () => {
-		if (
-			confirmCloseIfDirty &&
-			!window.confirm("Discard your changes and close?")
-		) {
+	const requestClose = useCallback(() => {
+		if (confirmCloseIfDirty && !window.confirm("Discard your changes and close?")) {
 			return;
 		}
 		onClose();
-	};
+	}, [confirmCloseIfDirty, onClose]);
+
+	useEffect(() => {
+		const onKey = (e: KeyboardEvent) => {
+			if (e.key === "Escape" && !escapeHandled(e)) requestClose();
+		};
+		window.addEventListener("keydown", onKey);
+		return () => window.removeEventListener("keydown", onKey);
+	}, [requestClose]);
 
 	const head = (
 		<div className="modal-head">
@@ -57,7 +55,7 @@ export function Modal({
 	);
 
 	return (
-		<div className="modal-backdrop" onClick={onBackdrop}>
+		<div className="modal-backdrop" onClick={requestClose}>
 			<div
 				className={"modal" + (wide ? " modal-wide" : "")}
 				onClick={(e) => e.stopPropagation()}

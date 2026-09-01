@@ -7,7 +7,7 @@ import (
 	"github.com/devcutler/lightscale/daemon/store"
 )
 
-func renderClientConf(u store.User, serverPubKey, endpoint, fullSubnet string) string {
+func renderClientConf(u store.User, serverPubKey, endpoint, fullSubnet string, dns []string) string {
 	addrPrefix := strings.SplitN(fullSubnet, "/", 2)
 	mask := "23"
 	if len(addrPrefix) == 2 {
@@ -17,8 +17,7 @@ func renderClientConf(u store.User, serverPubKey, endpoint, fullSubnet string) s
 	c.section("Interface")
 	c.add("PrivateKey", u.PrivateKey)
 	c.add("Address", u.IPAddress+"/"+mask)
-	// previously hardcoded for personal use, commented for publish
-	// c.add("DNS", "1.1.1.1, 8.8.8.8")
+	c.add("DNS", joinDNS(dns))
 	c.section("Peer")
 	c.add("PublicKey", serverPubKey)
 	c.add("PresharedKey", u.PresharedKey)
@@ -26,6 +25,16 @@ func renderClientConf(u store.User, serverPubKey, endpoint, fullSubnet string) s
 	c.add("Endpoint", endpoint)
 	c.add("PersistentKeepalive", "25")
 	return c.String()
+}
+
+func joinDNS(dns []string) string {
+	out := make([]string, 0, len(dns))
+	for _, s := range dns {
+		if s = strings.TrimSpace(s); s != "" {
+			out = append(out, s)
+		}
+	}
+	return strings.Join(out, ", ")
 }
 
 type wgConf struct {
@@ -40,6 +49,9 @@ func (c *wgConf) section(name string) {
 }
 
 func (c *wgConf) add(key, value string) {
+	if value == "" {
+		return
+	}
 	c.lines = append(c.lines, fmt.Sprintf("%s = %s", key, value))
 }
 

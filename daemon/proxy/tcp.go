@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net"
 	"strconv"
 	"sync"
@@ -17,14 +18,19 @@ type TCPHandler struct {
 	Policy      *policy.Holder
 	Flows       *policy.FlowTable
 	Resolver    *BackendResolver
+	Logger      *slog.Logger
 	DialTimeout time.Duration
 }
 
-func NewTCPHandler(p *policy.Holder, ft *policy.FlowTable, r *BackendResolver) *TCPHandler {
+func NewTCPHandler(p *policy.Holder, ft *policy.FlowTable, r *BackendResolver, logger *slog.Logger) *TCPHandler {
+	if logger == nil {
+		logger = slog.Default()
+	}
 	return &TCPHandler{
 		Policy:      p,
 		Flows:       ft,
 		Resolver:    r,
+		Logger:      logger,
 		DialTimeout: 5 * time.Second,
 	}
 }
@@ -47,17 +53,23 @@ func (h *TCPHandler) Handle(ctx context.Context, conn net.Conn) {
 		return
 	}
 
-	backendIP, err := h.Resolver.Resolve(ctx, svc.Origin)
+	target, err := h.Resolver.Resolve(ctx, svc.Origin, dstPort, "tcp")
 	if err != nil {
+		h.Logger.Warn("proxy: tcp resolve failed",
+			"service", svc.Name, "origin", svc.Origin.String(), "port", dstPort, "err", err)
 		return
 	}
 
 	dialCtx, cancel := context.WithTimeout(ctx, h.DialTimeout)
 	defer cancel()
 	var d net.Dialer
-	backend, err := d.DialContext(dialCtx, "tcp", net.JoinHostPort(backendIP, strconv.Itoa(dstPort)))
+	backend, err := d.DialContext(dialCtx, "tcp", net.JoinHostPort(target.DialHost, strconv.Itoa(dstPort)))
 	if err != nil {
 		h.Resolver.Invalidate(svc.Origin)
+		h.Logger.Warn("proxy: tcp dial failed",
+			"service", svc.Name, "origin", svc.Origin.String(),
+			"backend", net.JoinHostPort(target.DialHost, strconv.Itoa(dstPort)),
+			"via", target.Detail, "err", err)
 		return
 	}
 	defer backend.Close()

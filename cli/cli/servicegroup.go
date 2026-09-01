@@ -48,16 +48,17 @@ func newServiceGroupMembersCmd(opts *Options) *cobra.Command {
 			}
 			rows := make([][]string, 0, len(services))
 			for _, sv := range services {
-				rows = append(rows, []string{strconv.FormatInt(sv.ID, 10), sv.Name, sv.IPAddress, sv.Origin, sv.Hostname})
+				rows = append(rows, []string{strconv.FormatInt(sv.ID, 10), sv.Name, sv.IPAddress,
+					sv.OriginKind, originValueLabel(sv), sv.Hostname})
 			}
-			table(cmd.OutOrStdout(), []string{"ID", "NAME", "IP", "ORIGIN", "HOSTNAME"}, rows)
+			table(cmd.OutOrStdout(), []string{"ID", "NAME", "INTERNAL IP", "KIND", "BACKEND", "DOMAIN"}, rows)
 			return nil
 		},
 	}
 }
 
 func newServiceGroupCreateCmd(opts *Options) *cobra.Command {
-	return &cobra.Command{
+	return withPreview(&cobra.Command{
 		Use:   "create <name>",
 		Short: "Create a service group",
 		Args:  cobra.ExactArgs(1),
@@ -75,7 +76,7 @@ func newServiceGroupCreateCmd(opts *Options) *cobra.Command {
 			fmt.Fprintf(cmd.OutOrStdout(), "created service-group %s\n", g.Name)
 			return nil
 		},
-	}
+	}, opts, serviceGroups.previewCreate)
 }
 
 func newServiceGroupListCmd(opts *Options) *cobra.Command {
@@ -153,11 +154,11 @@ func newServiceGroupUpdateCmd(opts *Options) *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&newName, "name", "", "new name")
-	return cmd
+	return withPreview(cmd, opts, serviceGroups.previewUpdate)
 }
 
 func newServiceGroupDeleteCmd(opts *Options) *cobra.Command {
-	return &cobra.Command{
+	return withPreview(&cobra.Command{
 		Use:   "delete <name>",
 		Short: "Delete a service group",
 		Args:  cobra.ExactArgs(1),
@@ -174,11 +175,11 @@ func newServiceGroupDeleteCmd(opts *Options) *cobra.Command {
 			fmt.Fprintf(cmd.OutOrStdout(), "deleted service-group %s\n", g.Name)
 			return nil
 		},
-	}
+	}, opts, serviceGroups.previewDelete)
 }
 
 func newServiceGroupJoinCmd(opts *Options) *cobra.Command {
-	return &cobra.Command{
+	return withPreview(&cobra.Command{
 		Use:   "join <group> <service>",
 		Short: "Add a service to a group",
 		Args:  cobra.ExactArgs(2),
@@ -201,11 +202,11 @@ func newServiceGroupJoinCmd(opts *Options) *cobra.Command {
 			fmt.Fprintf(cmd.OutOrStdout(), "added %s to %s\n", sv.Name, g.Name)
 			return nil
 		},
-	}
+	}, opts, serviceGroups.previewJoin)
 }
 
 func newServiceGroupLeaveCmd(opts *Options) *cobra.Command {
-	return &cobra.Command{
+	return withPreview(&cobra.Command{
 		Use:   "leave <group> <service>",
 		Short: "Remove a service from a group",
 		Args:  cobra.ExactArgs(2),
@@ -227,7 +228,7 @@ func newServiceGroupLeaveCmd(opts *Options) *cobra.Command {
 			fmt.Fprintf(cmd.OutOrStdout(), "removed %s from %s\n", sv.Name, g.Name)
 			return nil
 		},
-	}
+	}, opts, serviceGroups.previewLeave)
 }
 
 func lookupServiceGroupByName(ctx context.Context, opts *Options, name string) (serviceGroupJSON, error) {

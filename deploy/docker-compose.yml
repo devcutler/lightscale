@@ -11,6 +11,8 @@ services:
       - NET_ADMIN
     ports:
       - "51820:51820/udp"
+    networks:
+      - apps # see below
     volumes:
       - ./lightscale.toml:/etc/lightscale/lightscale.toml:ro
       - ./data:/var/lib/lightscale
@@ -21,6 +23,10 @@ services:
       # only mount the host docker socket if you want to use --origin <container> services:
       # - /var/run/docker.sock:/var/run/docker.sock:ro
     restart: unless-stopped
+
+networks:
+  apps: # rename this line to an existing named network you're using elsewhere
+    external: true
 
 # you can manage it with the CLI inside the container:
 # docker compose exec lightscale lightscale status

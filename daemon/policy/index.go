@@ -5,6 +5,7 @@ import (
 	"sync/atomic"
 
 	"github.com/devcutler/lightscale/daemon/store"
+	"github.com/devcutler/lightscale/shared/origin"
 )
 
 type Index struct {
@@ -29,7 +30,7 @@ type ServiceSnapshot struct {
 	ID        int64
 	Name      string
 	Hostname  string
-	Origin    string
+	Origin    origin.Spec
 	IPAddress string
 	Ports     []PortSpec
 }

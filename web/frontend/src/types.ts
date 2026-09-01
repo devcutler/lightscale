@@ -16,16 +16,28 @@ interface ServicePort {
 	protocol: string;
 }
 
+export type OriginKind = "host" | "container" | "ip" | "hostname";
+
 export interface Service {
 	id: number;
 	name: string;
 	hostname: string;
-	origin: string;
+	origin_kind: OriginKind;
+	origin_value: string;
+	origin_network?: string;
 	ip_address: string;
 	description?: string;
 	ports: ServicePort[];
 	created_at: string;
 	updated_at: string;
+}
+
+export interface OriginCheck {
+	reachable: boolean;
+	dial_host?: string;
+	network?: string;
+	detail?: string;
+	error?: string;
 }
 
 export interface UserGroup {
@@ -109,5 +121,6 @@ export interface Connection {
 export interface ContainerSummary {
 	id: string;
 	name: string;
-	ip?: string;
+	networks?: string[];
+	shared: boolean;
 }

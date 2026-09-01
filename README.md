@@ -24,18 +24,21 @@ sudo $EDITOR /etc/lightscale/lightscale.toml
 sudo systemctl restart lightscaled
 ```
 
-I don't recommend running in Docker for various reasons, but you can for cleanliness if you absolutely want to. There's an example compose file and the Dockerfile (for building automatically) in `deploy/`. For docker the services you want clients to reach have to be on a network accessible to the container. You can just add it to a shared network with all your services (or use host networking).
+I don't recommend running in Docker for various reasons, but you can for cleanliness if you absolutely want to. There's an example compose file and the Dockerfile (for building automatically) in `deploy/`. For docker the services you want clients to reach have to be on a network accessible to the container. For automatic Docker networking (`--container` resolving) you'll need to give it access to the socket.
 
-You could probably run this fairly easily with any other process-management tool like PM2. I can't imagine it'd be difficult to manage this with something like Podman too.
+You could probably run this fairly easily with any other process-management tool like PM2. I can't imagine it'd be difficult to manage this with something like Proxmox or Podman instead of Docker.
 
 ## Commands
 
 - `user`, `user-group`, `service`, `service-group`: create / list / get / update / delete, plus `join` / `leave` on the groups.
+- `service check <name>`, `service containers`: see what a service resolves to, and what's available to point one at.
 - `policy`: `add <subject> <object> allow|deny`, `list`, `delete <id>`.
 - `status`, `peers`, `connections`, `dns`: inspect the daemon and tunnel.
 - `serve <bind>`: serve the web UI (see [Web UI](#web-ui)).
 
-Run any command with `--help` for its flags. `--json` for machine output on most commands, `--socket <path>` to point at a non-default socket.
+Run any command with `--help` for info on what it does (reactive to the command- it'll give an example).
+
+`--json` for machine output on most commands, `--socket <path>` to point at a non-default socket.
 
 ## Config
 
@@ -57,14 +60,46 @@ lightscale user config alice > alice.conf
 
 ## Exposing a service
 
-By default, `origin` will be host.
+The arguments define what resolution will be used for services. The daemon has to be able to reach them in some way.
 
 ```sh
-# host         a port on 127.0.0.1 from lightscale's perspective
-# <container>  a docker container, by name, if the docker socket is set in the config
-# <ip>         any accessible IP from lightscale's perspective
-# <hostname>   simple DNS resolution
-lightscale service create jellyfin --origin host --ports 8096/tcp
+# --container <name>   a container, by name
+# --ip <addr>          any address lightscale can reach
+# --hostname <name>    a DNS name lightscale can resolve
+# --host               127.0.0.1 from lightscale's perspective
+lightscale service create jellyfin --container jellyfin --ports 8096/tcp
+lightscale service create nas      --ip 192.168.1.50 --ports 5000/tcp
+lightscale service create git      --hostname git.internal --ports 22/tcp
+lightscale service create metrics  --host --ports 9100/tcp
+```
+
+The other flags:
+
+```sh
+# --ports <ports>            8096/tcp,19132/udp. comma separated. the port alone means tcp and udp.
+#                           if not present all ports will be allowed. Required with --host
+# --domain <fqdn>           the domain for dns and such (not actually required). Defaults to <name>.<domain>
+# --internal-ip <addr>      internal IP, defaults to the lowest free one. must be in the subnet
+# --network <name>          pin container selection to one network (only with --containre)
+# --description <text>
+lightscale service create jellyfin --container jellyfin --ports 8096/tcp --domain media.home.example.com --internal-ip 10.6.1.20
+```
+
+`--internal-hostname` is an alias for `--domain`.
+
+`update` takes the same flags, plus `--name` to rename. It leaves alone anything you don't pass.
+
+```sh
+lightscale service update jellyfin --container jellyfin-new
+lightscale service update jellyfin --ip 192.168.1.60
+```
+
+```sh
+# list containers, and whether lightscale shares a network with them
+lightscale service containers
+
+# check what a service's backend resolves to right now
+lightscale service check jellyfin
 ```
 
 Access control is pretty simple, you add policies and connections get checked against them.

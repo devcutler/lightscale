@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -12,6 +13,7 @@ import (
 
 	"github.com/devcutler/lightscale/daemon/store"
 	"github.com/devcutler/lightscale/shared/config"
+	"github.com/devcutler/lightscale/shared/wire"
 )
 
 func newTestServer(t *testing.T) *Server {
@@ -90,7 +92,7 @@ func TestServicePoliciesAndDNS(t *testing.T) {
 	}
 
 	rr = do(t, srv, "POST", "/api/services", map[string]any{
-		"name": "jellyfin", "origin": "host", "ports": "8096/tcp",
+		"name": "jellyfin", "origin_kind": "host", "ports": "8096/tcp",
 	})
 	if rr.Code != http.StatusCreated {
 		t.Fatalf("create service: %d %s", rr.Code, rr.Body.String())
@@ -168,9 +170,48 @@ func TestAPIFailurePaths(t *testing.T) {
 		}
 	})
 
+	t.Run("malformed origins -> 400", func(t *testing.T) {
+		cases := map[string]map[string]any{
+			"unknown kind":       {"origin_kind": "nonsense", "origin_value": "x"},
+			"container no value": {"origin_kind": "container"},
+			"hostname no value":  {"origin_kind": "hostname"},
+			"host with value":    {"origin_kind": "host", "origin_value": "jellyfin"},
+			"bad ip literal":     {"origin_kind": "ip", "origin_value": "999.1.1.1"},
+			"network on non-container": {
+				"origin_kind": "hostname", "origin_value": "a.b", "origin_network": "n"},
+		}
+		for name, origin := range cases {
+			t.Run(name, func(t *testing.T) {
+				body := map[string]any{"name": "svc-" + strings.ReplaceAll(name, " ", "-"), "ports": "80/tcp"}
+				maps.Copy(body, origin)
+				rr := do(t, srv, "POST", "/api/services", body)
+				if rr.Code != http.StatusBadRequest {
+					t.Fatalf("got %d: %s", rr.Code, rr.Body.String())
+				}
+			})
+		}
+	})
+
+	t.Run("container origin round-trips its fields", func(t *testing.T) {
+		rr := do(t, srv, "POST", "/api/services", map[string]any{
+			"name": "jelly2", "origin_kind": "container", "origin_value": "jellyfin",
+			"origin_network": "appnet", "ports": "8096/tcp",
+		})
+		if rr.Code != http.StatusCreated {
+			t.Fatalf("got %d: %s", rr.Code, rr.Body.String())
+		}
+		var sv wire.Service
+		if err := json.Unmarshal(rr.Body.Bytes(), &sv); err != nil {
+			t.Fatal(err)
+		}
+		if sv.OriginKind != "container" || sv.OriginValue != "jellyfin" || sv.OriginNetwork != "appnet" {
+			t.Fatalf("origin fields not preserved: %+v", sv)
+		}
+	})
+
 	t.Run("invalid port spec -> 400", func(t *testing.T) {
 		rr := do(t, srv, "POST", "/api/services", map[string]any{
-			"name": "bad", "origin": "192.168.1.5", "ports": "notaport/tcp",
+			"name": "bad", "origin_kind": "ip", "origin_value": "192.168.1.5", "ports": "notaport/tcp",
 		})
 		if rr.Code != http.StatusBadRequest {
 			t.Fatalf("got %d: %s", rr.Code, rr.Body.String())
@@ -179,7 +220,7 @@ func TestAPIFailurePaths(t *testing.T) {
 
 	t.Run("wildcard host service -> 400", func(t *testing.T) {
 		rr := do(t, srv, "POST", "/api/services", map[string]any{
-			"name": "wild", "origin": "host",
+			"name": "wild", "origin_kind": "host",
 		})
 		if rr.Code != http.StatusBadRequest {
 			t.Fatalf("got %d: %s", rr.Code, rr.Body.String())

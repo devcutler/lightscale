@@ -1,6 +1,7 @@
 import { ReactNode, useMemo, useRef, useState } from "react";
 import { ChevronDown, ChevronUp, Columns3, Search } from "lucide-react";
 import { Checkbox } from "./Checkbox";
+import { Popover } from "./Popover";
 import { useDismiss } from "./useDismiss";
 
 export interface Column<T> {
@@ -8,6 +9,7 @@ export interface Column<T> {
 	header: string;
 	value?: (row: T) => string | number;
 	render?: (row: T) => ReactNode;
+	search?: (row: T) => string;
 	sortable?: boolean;
 	compare?: (a: T, b: T) => number;
 }
@@ -83,7 +85,11 @@ export function Table<T>({
 		let out = rows;
 		if (q) {
 			out = rows.filter((row) =>
-				columnsRef.current.some((c) => String(valueOf(row, c)).toLowerCase().includes(q)),
+				columnsRef.current.some(
+					(c) =>
+						String(valueOf(row, c)).toLowerCase().includes(q) ||
+						(c.search?.(row) ?? "").toLowerCase().includes(q),
+				),
 			);
 		}
 		const chain: Array<(a: T, b: T) => number> = [];
@@ -143,7 +149,7 @@ export function Table<T>({
 								<Columns3 size={16} />
 								Columns
 							</button>
-							{colsOpen && (
+							<Popover anchor={colsRoot} open={colsOpen} align="right">
 								<ul className="col-toggle-list">
 									{toggleable.map((c) => (
 										<li key={c.key} className="col-toggle-option">
@@ -156,7 +162,7 @@ export function Table<T>({
 										</li>
 									))}
 								</ul>
-							)}
+							</Popover>
 						</div>
 					)}
 					<span>

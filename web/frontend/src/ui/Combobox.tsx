@@ -1,5 +1,6 @@
 import { useRef, useState } from "react";
 import { useDismiss } from "./useDismiss";
+import { Popover } from "./Popover";
 
 export type ComboOption =
 	| { value: string; label: string; }
@@ -78,7 +79,7 @@ export function Combobox({ value, onChange, options, placeholder, autoFocus }: P
 				onFocus={() => setOpen(true)}
 				onKeyDown={onKey}
 			/>
-			{open && matches.length > 0 && (
+			<Popover anchor={root} open={open && matches.length > 0}>
 				<ul className="select-list" role="listbox">
 					{matches.map((o, i) =>
 						isSep(o) ? (
@@ -100,7 +101,7 @@ export function Combobox({ value, onChange, options, placeholder, autoFocus }: P
 						),
 					)}
 				</ul>
-			)}
+			</Popover>
 		</div>
 	);
 }

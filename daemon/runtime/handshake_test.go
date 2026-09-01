@@ -24,7 +24,7 @@ func TestE2E_HandshakeAndPing(t *testing.T) {
 }
 
 func handshakeCompleted(dump string) bool {
-	for _, line := range strings.Split(dump, "\n") {
+	for line := range strings.SplitSeq(dump, "\n") {
 		v, ok := strings.CutPrefix(line, "last_handshake_time_sec=")
 		if ok && strings.TrimSpace(v) != "0" {
 			return true

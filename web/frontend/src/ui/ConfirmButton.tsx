@@ -18,9 +18,9 @@ export function ConfirmButton({ onConfirm, target, label = "Delete", title }: Pr
 		setBusy(true);
 		try {
 			await onConfirm();
+			setOpen(false);
 		} finally {
 			setBusy(false);
-			setOpen(false);
 		}
 	};
 

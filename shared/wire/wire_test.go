@@ -56,7 +56,7 @@ func TestUserOmitemptyEmailEndpoint(t *testing.T) {
 func TestServiceRoundTripWithPorts(t *testing.T) {
 	sv := Service{
 		ID: 2, Name: "jellyfin", Hostname: "jellyfin.lightscale.local",
-		Origin: "host", IPAddress: "10.6.1.5", Description: "media",
+		OriginKind: "host", IPAddress: "10.6.1.5", Description: "media",
 		Ports:     []ServicePort{{Port: 8096, Protocol: "tcp"}, {Port: 9000, Protocol: "udp"}},
 		CreatedAt: "t1", UpdatedAt: "t2",
 	}
@@ -64,7 +64,7 @@ func TestServiceRoundTripWithPorts(t *testing.T) {
 	if !reflect.DeepEqual(sv, got) {
 		t.Errorf("round trip mismatch:\n got %+v\nwant %+v", got, sv)
 	}
-	for _, key := range []string{`"ip_address"`, `"protocol"`, `"hostname"`} {
+	for _, key := range []string{`"ip_address"`, `"protocol"`, `"hostname"`, `"origin_kind"`, `"origin_value"`} {
 		if !strings.Contains(raw, key) {
 			t.Errorf("JSON missing key %s:\n%s", key, raw)
 		}
@@ -174,7 +174,7 @@ func TestCreateReqsRoundTrip(t *testing.T) {
 	if _, got := roundTrip(t, CreateUserReq{Name: "a", Email: "e", IP: "10.6.0.5", Endpoint: "x"}); got.Name != "a" {
 		t.Error("CreateUserReq lost data")
 	}
-	if _, got := roundTrip(t, CreateServiceReq{Name: "s", Origin: "host", Ports: "8096/tcp", Hostname: "h", IP: "10.6.1.5", Description: "d"}); got.Origin != "host" {
+	if _, got := roundTrip(t, CreateServiceReq{Name: "s", OriginKind: "container", OriginValue: "jellyfin", Ports: "8096/tcp", Hostname: "h", IP: "10.6.1.5", Description: "d"}); got.OriginKind != "container" || got.OriginValue != "jellyfin" {
 		t.Error("CreateServiceReq lost data")
 	}
 	if _, got := roundTrip(t, CreatePolicyReq{SubjectName: "a", ObjectName: "b", Action: "allow"}); got.Action != "allow" {

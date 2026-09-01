@@ -20,11 +20,12 @@ type Config struct {
 }
 
 type WireGuardConfig struct {
-	Port          int    `toml:"port"`
-	Subnet        string `toml:"subnet"`
-	ClientSubnet  string `toml:"client_subnet"`
-	ServiceSubnet string `toml:"service_subnet"`
-	ServerIP      string `toml:"server_ip"`
+	Port          int      `toml:"port"`
+	Subnet        string   `toml:"subnet"`
+	ClientSubnet  string   `toml:"client_subnet"`
+	ServiceSubnet string   `toml:"service_subnet"`
+	ServerIP      string   `toml:"server_ip"`
+	DNS           []string `toml:"dns"`
 }
 
 type SocketConfig struct {

@@ -17,9 +17,9 @@ func TestE2E_AllowAndDeny(t *testing.T) {
 
 	backendPort := startEchoBackend(t)
 	h.apiPost("/api/services", map[string]any{
-		"name":   "echo",
-		"origin": "host",
-		"ports":  fmt.Sprintf("%d/tcp", backendPort),
+		"name":        "echo",
+		"origin_kind": "host",
+		"ports":       fmt.Sprintf("%d/tcp", backendPort),
 	})
 	svc := getServiceByName(t, h, "echo")
 	vip := mustParseAddr(t, svc["ip_address"].(string))
@@ -53,9 +53,9 @@ func TestE2E_PortAllowlist(t *testing.T) {
 	backendPort := startEchoBackend(t)
 	alice := h.startPeer("alice")
 	h.apiPost("/api/services", map[string]any{
-		"name":   "echo",
-		"origin": "host",
-		"ports":  "9999/tcp",
+		"name":        "echo",
+		"origin_kind": "host",
+		"ports":       "9999/tcp",
 	})
 	svc := getServiceByName(t, h, "echo")
 	vip := mustParseAddr(t, svc["ip_address"].(string))
@@ -79,9 +79,9 @@ func TestE2E_KillOnRevoke(t *testing.T) {
 	alice := h.startPeer("alice")
 
 	h.apiPost("/api/services", map[string]any{
-		"name":   "echo",
-		"origin": "host",
-		"ports":  fmt.Sprintf("%d/tcp", backendPort),
+		"name":        "echo",
+		"origin_kind": "host",
+		"ports":       fmt.Sprintf("%d/tcp", backendPort),
 	})
 	svc := getServiceByName(t, h, "echo")
 	vip := mustParseAddr(t, svc["ip_address"].(string))
@@ -118,9 +118,9 @@ func TestE2E_DynamicServiceAdd(t *testing.T) {
 
 	backendPort := startEchoBackend(t)
 	h.apiPost("/api/services", map[string]any{
-		"name":   "lateweb",
-		"origin": "host",
-		"ports":  fmt.Sprintf("%d/tcp", backendPort),
+		"name":        "lateweb",
+		"origin_kind": "host",
+		"ports":       fmt.Sprintf("%d/tcp", backendPort),
 	})
 	svc := getServiceByName(t, h, "lateweb")
 	vip := mustParseAddr(t, svc["ip_address"].(string))
@@ -186,9 +186,9 @@ func TestE2E_WildcardPorts(t *testing.T) {
 	alice := h.startPeer("alice")
 
 	h.apiPost("/api/services", map[string]any{
-		"name":   "wild",
-		"origin": "host",
-		"ports":  fmt.Sprintf("%d/tcp", backendPort),
+		"name":        "wild",
+		"origin_kind": "host",
+		"ports":       fmt.Sprintf("%d/tcp", backendPort),
 	})
 	svc := getServiceByName(t, h, "wild")
 	vip := mustParseAddr(t, svc["ip_address"].(string))

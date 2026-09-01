@@ -6,6 +6,8 @@ import (
 	"testing"
 
 	"github.com/devcutler/lightscale/daemon/store"
+
+	"github.com/devcutler/lightscale/shared/origin"
 )
 
 type fixture struct {
@@ -39,7 +41,7 @@ func newFixture(t *testing.T) *fixture {
 		t.Fatal(err)
 	}
 	jelly, err := s.CreateService(ctx, store.CreateServiceInput{
-		Name: "jellyfin", Hostname: "jellyfin.local", Origin: "host",
+		Name: "jellyfin", Hostname: "jellyfin.local", Origin: origin.Spec{Kind: origin.Host},
 		IPAddress: "10.6.1.5",
 		Ports:     []store.ServicePort{{Port: 8096, Protocol: "tcp"}},
 	})
@@ -83,7 +85,7 @@ func TestWildcardPortsAuthorization(t *testing.T) {
 	f := newFixture(t)
 	ctx := context.Background()
 	open, err := f.store.CreateService(ctx, store.CreateServiceInput{
-		Name: "open", Hostname: "open.local", Origin: "192.168.1.10",
+		Name: "open", Hostname: "open.local", Origin: origin.Spec{Kind: origin.IP, Value: "192.168.1.10"},
 		IPAddress: "10.6.1.9",
 	})
 	if err != nil {
@@ -132,7 +134,7 @@ func TestServiceGroupAuthorization(t *testing.T) {
 		t.Fatalf("member service should be allowed via group policy, got %s", d)
 	}
 	other, err := f.store.CreateService(ctx, store.CreateServiceInput{
-		Name: "other", Hostname: "other.local", Origin: "192.168.1.20",
+		Name: "other", Hostname: "other.local", Origin: origin.Spec{Kind: origin.IP, Value: "192.168.1.20"},
 		IPAddress: "10.6.1.20",
 		Ports:     []store.ServicePort{{Port: 8096, Protocol: "tcp"}},
 	})

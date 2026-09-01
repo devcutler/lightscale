@@ -4,7 +4,7 @@ import { Button } from "../ui/Button";
 import { useData } from "../ui/useData";
 import { useNewParam } from "../ui/useNewParam";
 import { del, get, patch, post } from "../api";
-import { ContainerSummary, Service } from "../types";
+import { ContainerSummary, OriginKind, Service } from "../types";
 import { Table, Column } from "../ui/Table";
 import { Page } from "../ui/Page";
 import { FormModal } from "../ui/FormModal";
@@ -13,6 +13,9 @@ import { Field } from "../ui/Field";
 import { ConfirmButton } from "../ui/ConfirmButton";
 import { useAction, useToast } from "../ui/toast";
 import { ipKey, portsLabel } from "../format";
+
+const originValueLabel = (s: Service): string =>
+	s.origin_kind === "host" ? "(this machine)" : s.origin_value;
 
 const firstPort = (s: Service): number =>
 	s.ports.length ? Math.min(...s.ports.map((p) => p.port)) : Number.MAX_SAFE_INTEGER;
@@ -28,9 +31,16 @@ export function Services() {
 
 	const cols: Column<Service>[] = [
 		{ key: "name", header: "Name", value: (s) => s.name, sortable: true },
-		{ key: "ip", header: "IP", value: (s) => s.ip_address ?? "", sortable: true, compare: (a, b) => ipKey(a.ip_address) - ipKey(b.ip_address), render: (s) => s.ip_address || "-" },
-		{ key: "origin", header: "Origin", value: (s) => s.origin, sortable: true },
-		{ key: "hostname", header: "Hostname", value: (s) => s.hostname },
+		{ key: "ip", header: "Internal IP", value: (s) => s.ip_address ?? "", sortable: true, compare: (a, b) => ipKey(a.ip_address) - ipKey(b.ip_address), render: (s) => s.ip_address || "-" },
+		{ key: "kind", header: "Kind", value: (s) => s.origin_kind, sortable: true },
+		{
+			key: "backend",
+			header: "Backend",
+			value: (s) => originValueLabel(s),
+			sortable: true,
+			render: (s) => originValueLabel(s),
+		},
+		{ key: "hostname", header: "Domain", value: (s) => s.hostname },
 		{ key: "ports", header: "Ports", value: (s) => portsLabel(s.ports), sortable: true, compare: (a, b) => firstPort(a) - firstPort(b), render: (s) => portsLabel(s.ports) || "-" },
 		{
 			key: "actions",
@@ -112,14 +122,31 @@ function ServiceModal({
 	const editing = !!service;
 
 	const [name, setName] = useState(service?.name ?? "");
-	const [origin, setOrigin] = useState(service?.origin ?? "");
+	const [originKind, setOriginKind] = useState<OriginKind>(service?.origin_kind ?? "container");
+	const [originValue, setOriginValue] = useState(service?.origin_value ?? "");
+	const [originNetwork, setOriginNetwork] = useState(service?.origin_network ?? "");
 	const [ports, setPorts] = useState(service ? portsLabel(service.ports) : "");
 	const [hostname, setHostname] = useState(service?.hostname ?? "");
 	const [ip, setIp] = useState(service?.ip_address ?? "");
 	const [description, setDescription] = useState(service?.description ?? "");
 
+	const changeKind = (k: OriginKind) => {
+		setOriginKind(k);
+		if (k === "host") setOriginValue("");
+		if (k !== "container") setOriginNetwork("");
+	};
+
 	const onSubmit = async () => {
-		const payload = { name, origin, ports, hostname, ip, description };
+		const payload = {
+			name,
+			origin_kind: originKind,
+			origin_value: originKind === "host" ? "" : originValue,
+			origin_network: originKind === "container" ? originNetwork : "",
+			ports,
+			hostname,
+			ip,
+			description,
+		};
 		if (editing) {
 			await patch(`/services/${service!.id}`, payload);
 			toast.ok(`Updated ${name}`);
@@ -130,12 +157,64 @@ function ServiceModal({
 		onSaved();
 	};
 
-	const containerCount = containers.data?.length ?? 0;
-	const originHint = containers.error
-		? "couldn't list containers - type a container name or host address"
-		: containerCount > 0
-			? `start typing to pick from ${containerCount} running containers, or enter a host address`
-			: "a Docker container or host address that backs this service";
+	const containerOptions = (containers.data ?? []).map((c) => ({
+		value: c.name,
+		label: c.shared ? c.name : `${c.name} (no shared network)`,
+	}));
+	const containerHint = containers.error
+		? "couldn't list containers, so type the name yourself"
+		: containerOptions.length > 0
+			? "containers lightscale can see"
+			: "no containers visible. Check that a runtime socket is configured";
+
+	const valueField = () => {
+		switch (originKind) {
+			case "host":
+				return null;
+			case "container":
+				return (
+					<>
+						<Field label="Container" hint={containerHint}>
+							<Combobox
+								value={originValue}
+								onChange={setOriginValue}
+								placeholder="container name"
+								options={containerOptions}
+							/>
+						</Field>
+						<Field
+							label="Network"
+							hint="pin selection to one network. Rarely needed"
+						>
+							<input
+								value={originNetwork}
+								onChange={(e) => setOriginNetwork(e.target.value)}
+							/>
+						</Field>
+					</>
+				);
+			case "ip":
+				return (
+					<Field label="IP address" hint="a literal address, e.g. 192.168.1.50">
+						<input
+							value={originValue}
+							onChange={(e) => setOriginValue(e.target.value)}
+							placeholder="192.168.1.50"
+						/>
+					</Field>
+				);
+			case "hostname":
+				return (
+					<Field label="Hostname" hint="a DNS name the gateway can resolve">
+						<input
+							value={originValue}
+							onChange={(e) => setOriginValue(e.target.value)}
+							placeholder="nas.internal"
+						/>
+					</Field>
+				);
+		}
+	};
 
 	return (
 		<FormModal
@@ -144,34 +223,35 @@ function ServiceModal({
 			onSubmit={onSubmit}
 			submitLabel={editing ? "Save" : "Create"}
 			submitIcon={editing ? Check : Plus}
-			canSubmit={!!name}
-			dirty={!editing && !!(name || origin || ports || hostname || ip || description)}
+			canSubmit={!!name && (originKind === "host" || !!originValue)}
+			dirty={!editing && !!(name || originValue || ports || hostname || ip || description)}
 		>
 			<Field label="Name">
 				<input autoFocus value={name} onChange={(e) => setName(e.target.value)} />
 			</Field>
-			<Field label="Origin" hint={originHint}>
-				<Combobox
-					value={origin}
-					onChange={setOrigin}
-					placeholder="container name or host address"
-					options={[
-						{ value: "host", label: "host (this machine)" },
-						...((containers.data ?? []).length ? [{ separator: true as const }] : []),
-						...(containers.data ?? []).map((c) => ({
-							value: c.name,
-							label: c.ip ? `${c.name} (${c.ip})` : c.name,
-						})),
-					]}
-				/>
+			<Field
+				label="Backed by"
+				hint={
+					originKind === "host"
+						? "127.0.0.1 from lightscale's perspective; requires explicit ports below"
+						: "what this service points at"
+				}
+			>
+				<select value={originKind} onChange={(e) => changeKind(e.target.value as OriginKind)}>
+					<option value="container">Container</option>
+					<option value="ip">IP address</option>
+					<option value="hostname">Hostname</option>
+					<option value="host">This machine (host)</option>
+				</select>
 			</Field>
-			<Field label="Ports" hint="e.g. 80,443/tcp,5353/udp - bare port means tcp+udp">
+			{valueField()}
+			<Field label="Ports" hint="e.g. 80,443/tcp,5353/udp. A bare port means tcp and udp">
 				<input value={ports} onChange={(e) => setPorts(e.target.value)} />
 			</Field>
-			<Field label="Hostname" hint="optional; auto-derived if blank">
+			<Field label="Domain" hint="what users open in a browser. Derived from the name if blank">
 				<input value={hostname} onChange={(e) => setHostname(e.target.value)} />
 			</Field>
-			<Field label="IP address" hint="optional; auto-assigned from the service subnet if blank">
+			<Field label="Internal IP" hint="its address on the mesh. Assigned from the service subnet if blank">
 				<input value={ip} onChange={(e) => setIp(e.target.value)} />
 			</Field>
 			<Field label="Description" hint="optional">

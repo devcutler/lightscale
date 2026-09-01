@@ -83,16 +83,17 @@ func Run(ctx context.Context, cfg config.Config, logger *slog.Logger, reloadCh <
 		logger.Warn("daemon: docker disabled", "err", dockerErr)
 		dockerClient = nil
 	}
+	pingDocker(ctx, logger, dockerClient)
 	defer func() {
 		if dockerClient != nil {
 			_ = dockerClient.Close()
 		}
 	}()
 
-	resolver := proxy.NewResolver(dockerClient)
+	resolver := proxy.NewResolver(dockerClient, logger)
 	flows := policy.NewFlowTable()
-	tcpHandler := proxy.NewTCPHandler(holder, flows, resolver)
-	udpHandler := proxy.NewUDPHandler(holder, flows, resolver)
+	tcpHandler := proxy.NewTCPHandler(holder, flows, resolver, logger)
+	udpHandler := proxy.NewUDPHandler(holder, flows, resolver, logger)
 
 	listeners := newListenerManager(logger, wgServer, holder, tcpHandler, udpHandler)
 	if err := listeners.reconcile(ctx, idx); err != nil {
@@ -126,14 +127,15 @@ func Run(ctx context.Context, cfg config.Config, logger *slog.Logger, reloadCh <
 	})
 
 	srv := api.New(api.Deps{
-		Store:    st,
-		Config:   &cfg,
-		Docker:   dockerClient,
-		Status:   stat,
-		Peers:    &peersAdapter{srv: wgServer},
-		Flows:    &flowsAdapter{flows: flows},
-		Resolver: &resolverAdapter{holder: holder},
-		Now:      time.Now,
+		Store:         st,
+		Config:        &cfg,
+		Docker:        dockerClient,
+		Status:        stat,
+		Peers:         &peersAdapter{srv: wgServer},
+		Flows:         &flowsAdapter{flows: flows},
+		Resolver:      &resolverAdapter{holder: holder},
+		OriginChecker: resolver,
+		Now:           time.Now,
 	})
 
 	if cfg.Socket.Path == "" {
@@ -209,11 +211,29 @@ func Run(ctx context.Context, cfg config.Config, logger *slog.Logger, reloadCh <
 					if old != nil {
 						_ = old.Close()
 					}
+					pingDocker(ctx, logger, newDocker)
 				}
 			}
 			applyHotReload(logger, &cfg, fresh, stat)
 		}
 	}
+}
+
+func pingDocker(ctx context.Context, logger *slog.Logger, c *docker.Client) {
+	if c == nil {
+		logger.Info("daemon: container runtime socket not configured; " +
+			"container origins resolve by name only")
+		return
+	}
+	pingCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+	if err := c.Ping(pingCtx); err != nil {
+		logger.Warn("daemon: container runtime socket unusable; "+
+			"container origins will resolve by name only "+
+			"(is lightscaled in the docker group?)", "err", err)
+		return
+	}
+	logger.Info("daemon: container runtime connected", "self_networks", c.SelfNetworks(pingCtx))
 }
 
 func applyHotReload(logger *slog.Logger, current *config.Config, fresh config.Config, stat *statusTracker) {

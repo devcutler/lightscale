@@ -176,7 +176,8 @@ func (s *Server) getUserConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	conf := renderClientConf(u, serverPub, endpoint, s.deps.Config.WireGuard.Subnet)
+	conf := renderClientConf(u, serverPub, endpoint,
+		s.deps.Config.WireGuard.Subnet, s.deps.Config.WireGuard.DNS)
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	_, _ = w.Write([]byte(conf))
 }

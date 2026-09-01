@@ -22,7 +22,7 @@ func newPolicyCmd(opts *Options) *cobra.Command {
 }
 
 func newPolicyAddCmd(opts *Options) *cobra.Command {
-	return &cobra.Command{
+	return withPreview(&cobra.Command{
 		Use:   "add <subject> <object> <allow|deny>",
 		Short: "Add a policy rule",
 		Args:  cobra.ExactArgs(3),
@@ -49,7 +49,7 @@ func newPolicyAddCmd(opts *Options) *cobra.Command {
 				"added policy #%d: %s -> %s = %s\n", p.ID, p.SubjectName, p.ObjectName, p.Action)
 			return nil
 		},
-	}
+	}, opts, previewPolicyAdd)
 }
 
 func newPolicyListCmd(opts *Options) *cobra.Command {
@@ -82,7 +82,7 @@ func newPolicyListCmd(opts *Options) *cobra.Command {
 }
 
 func newPolicyDeleteCmd(opts *Options) *cobra.Command {
-	return &cobra.Command{
+	return withPreview(&cobra.Command{
 		Use:   "delete <id>",
 		Short: "Delete a policy rule",
 		Args:  cobra.ExactArgs(1),
@@ -99,5 +99,5 @@ func newPolicyDeleteCmd(opts *Options) *cobra.Command {
 			fmt.Fprintf(cmd.OutOrStdout(), "deleted policy #%d\n", id)
 			return nil
 		},
-	}
+	}, opts, previewPolicyDelete)
 }

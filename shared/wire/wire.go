@@ -35,32 +35,53 @@ type ServicePort struct {
 	Protocol string `json:"protocol"`
 }
 type Service struct {
-	ID          int64         `json:"id"`
-	Name        string        `json:"name"`
-	Hostname    string        `json:"hostname"`
-	Origin      string        `json:"origin"`
-	IPAddress   string        `json:"ip_address"`
-	Description string        `json:"description,omitempty"`
-	Ports       []ServicePort `json:"ports"`
-	CreatedAt   string        `json:"created_at"`
-	UpdatedAt   string        `json:"updated_at"`
+	ID            int64         `json:"id"`
+	Name          string        `json:"name"`
+	Hostname      string        `json:"hostname"`
+	OriginKind    string        `json:"origin_kind"`
+	OriginValue   string        `json:"origin_value"`
+	OriginNetwork string        `json:"origin_network,omitempty"`
+	IPAddress     string        `json:"ip_address"`
+	Description   string        `json:"description,omitempty"`
+	Ports         []ServicePort `json:"ports"`
+	CreatedAt     string        `json:"created_at"`
+	UpdatedAt     string        `json:"updated_at"`
 }
 
 type CreateServiceReq struct {
-	Name        string `json:"name"`
-	Origin      string `json:"origin"`
-	Ports       string `json:"ports"`
-	Hostname    string `json:"hostname"`
-	IP          string `json:"ip"`
-	Description string `json:"description"`
+	Name          string `json:"name"`
+	OriginKind    string `json:"origin_kind"`
+	OriginValue   string `json:"origin_value"`
+	OriginNetwork string `json:"origin_network,omitempty"`
+	Ports         string `json:"ports"`
+	Hostname      string `json:"hostname"`
+	IP            string `json:"ip"`
+	Description   string `json:"description"`
 }
 type UpdateServiceReq struct {
-	Name        *string `json:"name,omitempty"`
-	Hostname    *string `json:"hostname,omitempty"`
-	Origin      *string `json:"origin,omitempty"`
-	IP          *string `json:"ip,omitempty"`
-	Description *string `json:"description,omitempty"`
-	Ports       *string `json:"ports,omitempty"`
+	Name          *string `json:"name,omitempty"`
+	Hostname      *string `json:"hostname,omitempty"`
+	OriginKind    *string `json:"origin_kind,omitempty"`
+	OriginValue   *string `json:"origin_value,omitempty"`
+	OriginNetwork *string `json:"origin_network,omitempty"`
+	IP            *string `json:"ip,omitempty"`
+	Description   *string `json:"description,omitempty"`
+	Ports         *string `json:"ports,omitempty"`
+}
+
+type ContainerSummary struct {
+	ID       string   `json:"id"`
+	Name     string   `json:"name"`
+	Networks []string `json:"networks,omitempty"`
+	Shared   bool     `json:"shared"`
+}
+
+type OriginCheck struct {
+	Reachable bool   `json:"reachable"`
+	DialHost  string `json:"dial_host,omitempty"`
+	Network   string `json:"network,omitempty"`
+	Detail    string `json:"detail,omitempty"`
+	Error     string `json:"error,omitempty"`
 }
 
 type UserGroup struct {
