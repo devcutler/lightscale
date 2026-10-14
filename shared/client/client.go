@@ -13,6 +13,8 @@ import (
 	"os"
 	"strings"
 	"time"
+
+	"github.com/devcutler/lightscale/shared/wire"
 )
 
 type Client struct {
@@ -74,6 +76,18 @@ func (c *Client) Patch(ctx context.Context, path string, body, out any) error {
 func (c *Client) Delete(ctx context.Context, path string) error {
 	return c.do(ctx, http.MethodDelete, path, nil, nil)
 }
+func (c *Client) Connections(ctx context.Context, backendAddr string) ([]wire.Connection, error) {
+	path := "/api/connections"
+	if backendAddr != "" {
+		path += "?backend_addr=" + url.QueryEscape(backendAddr)
+	}
+	var out []wire.Connection
+	if err := c.Get(ctx, path, &out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *Client) GetText(ctx context.Context, path string) (string, error) {
 	resp, err := c.send(ctx, http.MethodGet, path, nil)
 	if err != nil {

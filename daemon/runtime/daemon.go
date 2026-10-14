@@ -384,12 +384,14 @@ func (a *flowsAdapter) Snapshot() []api.FlowSnapshot {
 	out := make([]api.FlowSnapshot, len(raw))
 	for i, f := range raw {
 		out[i] = api.FlowSnapshot{
-			ID:         f.ID,
-			SrcUserID:  f.SrcUserID,
-			ObjectType: f.ObjectType,
-			ObjectID:   f.ObjectID,
-			Port:       f.Port,
-			Protocol:   f.Protocol,
+			ID:               f.ID,
+			SrcUserID:        f.SrcUserID,
+			ObjectType:       f.ObjectType,
+			ObjectID:         f.ObjectID,
+			Port:             f.Port,
+			Protocol:         f.Protocol,
+			SrcAddr:          f.SrcAddr,
+			BackendLocalAddr: f.BackendLocalAddr,
 		}
 	}
 	return out

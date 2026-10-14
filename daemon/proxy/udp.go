@@ -94,11 +94,13 @@ func (h *UDPHandler) HandlePacket(ctx context.Context, inbound net.PacketConn, s
 		flowCtx, cancel := context.WithCancel(ctx)
 		flow = &udpFlow{out: out, cancel: cancel, lastSeen: time.Now()}
 		flow.flowID = h.Flows.Add(policy.Flow{
-			SrcUserID:  user.ID,
-			ObjectType: "service",
-			ObjectID:   svc.ID,
-			Port:       dstPort,
-			Protocol:   "udp",
+			SrcUserID:        user.ID,
+			ObjectType:       "service",
+			ObjectID:         svc.ID,
+			Port:             dstPort,
+			Protocol:         "udp",
+			SrcAddr:          srcAddr.String(),
+			BackendLocalAddr: out.LocalAddr().String(),
 			Close: func() {
 				cancel()
 				_ = out.Close()

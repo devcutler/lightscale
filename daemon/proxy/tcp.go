@@ -75,11 +75,13 @@ func (h *TCPHandler) Handle(ctx context.Context, conn net.Conn) {
 	defer backend.Close()
 
 	flowID := h.Flows.Add(policy.Flow{
-		SrcUserID:  user.ID,
-		ObjectType: "service",
-		ObjectID:   svc.ID,
-		Port:       dstPort,
-		Protocol:   "tcp",
+		SrcUserID:        user.ID,
+		ObjectType:       "service",
+		ObjectID:         svc.ID,
+		Port:             dstPort,
+		Protocol:         "tcp",
+		SrcAddr:          conn.RemoteAddr().String(),
+		BackendLocalAddr: backend.LocalAddr().String(),
 		Close: func() {
 			_ = conn.Close()
 			_ = backend.Close()

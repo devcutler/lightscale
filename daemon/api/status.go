@@ -53,15 +53,22 @@ func (s *Server) listConnections(w http.ResponseWriter, r *http.Request) {
 	flows := s.deps.Flows.Snapshot()
 	res := s.deps.Resolver
 
+	backendAddr := r.URL.Query().Get("backend_addr")
+
 	out := make([]connectionDTO, 0, len(flows))
 	for _, f := range flows {
+		if backendAddr != "" && f.BackendLocalAddr != backendAddr {
+			continue
+		}
 		dto := connectionDTO{
-			ID:         f.ID,
-			SrcUserID:  f.SrcUserID,
-			ObjectType: f.ObjectType,
-			ObjectID:   f.ObjectID,
-			Port:       f.Port,
-			Protocol:   f.Protocol,
+			ID:               f.ID,
+			SrcUserID:        f.SrcUserID,
+			ObjectType:       f.ObjectType,
+			ObjectID:         f.ObjectID,
+			Port:             f.Port,
+			Protocol:         f.Protocol,
+			SrcAddr:          f.SrcAddr,
+			BackendLocalAddr: f.BackendLocalAddr,
 		}
 		if res != nil {
 			if u, ok := res.UserByID(f.SrcUserID); ok {

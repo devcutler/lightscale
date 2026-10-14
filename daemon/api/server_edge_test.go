@@ -435,3 +435,45 @@ func TestUserConfigDNSAllBlankOmitsLine(t *testing.T) {
 		t.Errorf("all-blank dns must not emit a DNS line:\n%s", conf)
 	}
 }
+
+type fakeFlows []FlowSnapshot
+
+func (f fakeFlows) Snapshot() []FlowSnapshot { return f }
+
+func TestConnectionsBackendAddrFilter(t *testing.T) {
+	s, err := store.Open(filepath.Join(t.TempDir(), "api.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = s.Close() })
+	cfg := config.Defaults()
+	flows := fakeFlows{
+		{ID: 1, SrcUserID: 7, ObjectType: "service", ObjectID: 1, Port: 443, Protocol: "tcp", SrcAddr: "10.6.0.2:5000", BackendLocalAddr: "172.18.0.1:40000"},
+		{ID: 2, SrcUserID: 8, ObjectType: "service", ObjectID: 1, Port: 443, Protocol: "tcp", SrcAddr: "10.6.0.3:5001", BackendLocalAddr: "172.18.0.1:40001"},
+	}
+	srv := New(Deps{Store: s, Config: &cfg, Flows: flows})
+
+	get := func(path string) []wire.Connection {
+		t.Helper()
+		rr := do(t, srv, "GET", path, nil)
+		if rr.Code != http.StatusOK {
+			t.Fatalf("%s: %d %s", path, rr.Code, rr.Body.String())
+		}
+		var out []wire.Connection
+		if err := json.Unmarshal(rr.Body.Bytes(), &out); err != nil {
+			t.Fatal(err)
+		}
+		return out
+	}
+
+	if got := get("/api/connections"); len(got) != 2 {
+		t.Fatalf("unfiltered: got %d connections, want 2", len(got))
+	}
+	got := get("/api/connections?backend_addr=172.18.0.1:40001")
+	if len(got) != 1 || got[0].ID != 2 || got[0].SrcUserID != 8 || got[0].SrcAddr != "10.6.0.3:5001" || got[0].BackendLocalAddr != "172.18.0.1:40001" {
+		t.Fatalf("filtered: got %+v", got)
+	}
+	if got := get("/api/connections?backend_addr=172.18.0.1:1"); got == nil || len(got) != 0 {
+		t.Fatalf("no match: got %#v, want empty list", got)
+	}
+}

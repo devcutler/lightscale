@@ -185,14 +185,16 @@ type Peer struct {
 }
 
 type Connection struct {
-	ID         uint64 `json:"id"`
-	SrcUserID  int64  `json:"src_user_id"`
-	SrcName    string `json:"src_name,omitempty"`
-	SrcIP      string `json:"src_ip,omitempty"`
-	ObjectType string `json:"object_type"`
-	ObjectID   int64  `json:"object_id"`
-	ObjectName string `json:"object_name,omitempty"`
-	ObjectIP   string `json:"object_ip,omitempty"`
-	Port       int    `json:"port"`
-	Protocol   string `json:"protocol"`
+	ID               uint64 `json:"id"`
+	SrcUserID        int64  `json:"src_user_id"`
+	SrcName          string `json:"src_name,omitempty"`
+	SrcIP            string `json:"src_ip,omitempty"`
+	ObjectType       string `json:"object_type"`
+	ObjectID         int64  `json:"object_id"`
+	ObjectName       string `json:"object_name,omitempty"`
+	ObjectIP         string `json:"object_ip,omitempty"`
+	Port             int    `json:"port"`
+	Protocol         string `json:"protocol"`
+	SrcAddr          string `json:"src_addr,omitempty"`
+	BackendLocalAddr string `json:"backend_local_addr,omitempty"`
 }

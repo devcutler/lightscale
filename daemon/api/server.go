@@ -30,12 +30,14 @@ type PeersProvider interface {
 }
 
 type FlowSnapshot struct {
-	ID         uint64
-	SrcUserID  int64
-	ObjectType string
-	ObjectID   int64
-	Port       int
-	Protocol   string
+	ID               uint64
+	SrcUserID        int64
+	ObjectType       string
+	ObjectID         int64
+	Port             int
+	Protocol         string
+	SrcAddr          string
+	BackendLocalAddr string
 }
 type FlowsProvider interface {
 	Snapshot() []FlowSnapshot

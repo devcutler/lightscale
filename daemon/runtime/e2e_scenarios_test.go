@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -10,6 +11,8 @@ import (
 	"net/netip"
 	"testing"
 	"time"
+
+	"github.com/devcutler/lightscale/shared/client"
 )
 
 func TestE2E_AllowAndDeny(t *testing.T) {
@@ -269,4 +272,83 @@ func getServiceByName(t *testing.T, h *e2eHarness, name string) map[string]any {
 	}
 	t.Fatalf("service %s not found", name)
 	return nil
+}
+
+func TestE2E_ConnectionsByBackendAddr(t *testing.T) {
+	h := startHarness(t)
+
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen backend: %v", err)
+	}
+	t.Cleanup(func() { ln.Close() })
+	accepted := make(chan net.Conn, 8)
+	go func() {
+		for {
+			c, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			accepted <- c
+		}
+	}()
+	backendPort := ln.Addr().(*net.TCPAddr).Port
+	alice := h.startPeer("alice")
+
+	h.apiPost("/api/services", map[string]any{
+		"name":        "echo",
+		"origin_kind": "host",
+		"ports":       fmt.Sprintf("%d/tcp", backendPort),
+	})
+	svc := getServiceByName(t, h, "echo")
+	vip := mustParseAddr(t, svc["ip_address"].(string))
+	h.apiPost("/api/policies", map[string]any{
+		"subject_name": "alice",
+		"object_name":  "echo",
+		"action":       "allow",
+	})
+	time.Sleep(200 * time.Millisecond)
+
+	conn := mustDial(t, alice, vip, backendPort, 4*time.Second)
+	defer conn.Close()
+
+	var backendConn net.Conn
+	select {
+	case backendConn = <-accepted:
+	case <-time.After(3 * time.Second):
+		t.Fatal("backend never accepted a connection")
+	}
+	backendAddr := backendConn.RemoteAddr().String()
+
+	cl := client.New(h.cfg.Socket.Path)
+	ctx := context.Background()
+	conns, err := cl.Connections(ctx, backendAddr)
+	if err != nil {
+		t.Fatalf("connections: %v", err)
+	}
+	if len(conns) != 1 {
+		t.Fatalf("got %d connections for %s, want 1: %+v", len(conns), backendAddr, conns)
+	}
+	c := conns[0]
+	srcHost, _, _ := net.SplitHostPort(c.SrcAddr)
+	if c.SrcName != "alice" || c.BackendLocalAddr != backendAddr || srcHost != alice.addr.String() {
+		t.Fatalf("connection = %+v, want alice from %s via %s", c, alice.addr, backendAddr)
+	}
+
+	conn.Close()
+	backendConn.Close()
+	deadline := time.Now().Add(3 * time.Second)
+	for {
+		conns, err := cl.Connections(ctx, backendAddr)
+		if err != nil {
+			t.Fatalf("connections: %v", err)
+		}
+		if len(conns) == 0 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("flow still listed after close: %+v", conns)
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
 }

@@ -3,11 +3,13 @@ package policy
 import "sync"
 
 type Flow struct {
-	SrcUserID  int64
-	ObjectType string
-	ObjectID   int64
-	Port       int
-	Protocol   string
+	SrcUserID        int64
+	ObjectType       string
+	ObjectID         int64
+	Port             int
+	Protocol         string
+	SrcAddr          string
+	BackendLocalAddr string
 
 	Close func()
 }
@@ -27,12 +29,14 @@ func (t *FlowTable) Len() int {
 }
 
 type FlowSnapshot struct {
-	ID         uint64
-	SrcUserID  int64
-	ObjectType string
-	ObjectID   int64
-	Port       int
-	Protocol   string
+	ID               uint64
+	SrcUserID        int64
+	ObjectType       string
+	ObjectID         int64
+	Port             int
+	Protocol         string
+	SrcAddr          string
+	BackendLocalAddr string
 }
 
 func (t *FlowTable) Snapshot() []FlowSnapshot {
@@ -41,12 +45,14 @@ func (t *FlowTable) Snapshot() []FlowSnapshot {
 	out := make([]FlowSnapshot, 0, len(t.flows))
 	for id, f := range t.flows {
 		out = append(out, FlowSnapshot{
-			ID:         id,
-			SrcUserID:  f.SrcUserID,
-			ObjectType: f.ObjectType,
-			ObjectID:   f.ObjectID,
-			Port:       f.Port,
-			Protocol:   f.Protocol,
+			ID:               id,
+			SrcUserID:        f.SrcUserID,
+			ObjectType:       f.ObjectType,
+			ObjectID:         f.ObjectID,
+			Port:             f.Port,
+			Protocol:         f.Protocol,
+			SrcAddr:          f.SrcAddr,
+			BackendLocalAddr: f.BackendLocalAddr,
 		})
 	}
 	return out
